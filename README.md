@@ -3,7 +3,7 @@
 ## Tech Stack
 | Layer | Use | Why| 
 |---|---|---|
-|BackendNode.js + Fastify| Fast, WebSocket-friendly, everyone knows JS|
+|Backend|Node.js + Fastify| Fast, WebSocket-friendly, everyone knows JS|
 | WebSockets |ws library or Fastify's built-in | Simple, no overhead |
 |Frontend| React| Component model suits editor UI|
 |Code Editor|Monaco Editor (React wrapper)|This is VS Code's editor — don't build your own, it handles diff views natively|
