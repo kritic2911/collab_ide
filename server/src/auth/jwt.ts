@@ -1,17 +1,38 @@
 import jwt from 'jsonwebtoken';
 
 const SECRET = process.env.JWT_SECRET!;
-const EXPIRY = '7d';
+const EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
-export interface JWTPayload {
-  userId: string;
+export interface JwtPayload {
+  userId: number;
   username: string;
+  role: 'admin' | 'user';
+  color: string;
+  avatarUrl: string;
 }
 
-export function signToken(payload: JWTPayload): string {
-  return jwt.sign(payload, SECRET, { expiresIn: EXPIRY });
+/**
+ * Sign a JWT with the given payload.
+ */
+export function signJwt(payload: JwtPayload): string {
+  return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN as any });
 }
 
-export function verifyToken(token: string): JWTPayload {
-  return jwt.verify(token, SECRET) as JWTPayload;
+/**
+ * Verify a JWT. Returns the decoded payload, or null if invalid/expired.
+ * Never throws.
+ */
+export function verifyJwt(token: string): JwtPayload | null {
+  try {
+    const decoded = jwt.verify(token, SECRET) as JwtPayload & jwt.JwtPayload;
+    return {
+      userId: decoded.userId,
+      username: decoded.username,
+      role: decoded.role,
+      color: decoded.color,
+      avatarUrl: decoded.avatarUrl,
+    };
+  } catch {
+    return null;
+  }
 }

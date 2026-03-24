@@ -1,57 +1,66 @@
+import 'dotenv/config';
 import Fastify from 'fastify';
-import fastifySession from '@fastify/session';
-import fastifyCookie from '@fastify/cookie';
-import passport from '@fastify/passport';
-import { Strategy as GitHubStrategy } from 'passport-github2';
-import pool from './db/client.js';
-import { encrypt, decrypt } from './auth/crypto.js';
+import fastifyCors from '@fastify/cors';
+import sessionPlugin from './plugins/session.plugin.js';
+import passportPlugin from './plugins/passport.plugin.js';
 import { authRoutes } from './routes/auth.routes.js';
-import { repoRoutes } from './routes/repo.routes.js';
-import { githubRoutes } from './routes/github.routes.js';
+import { seedOrgCode } from './db/seedOrgCode.js';
 
+// ──────────────────────────────────────────────
+// Env validation — crash immediately if anything missing
+// ──────────────────────────────────────────────
+const required = [
+  'DATABASE_URL',
+  'GITHUB_CLIENT_ID',
+  'GITHUB_CLIENT_SECRET',
+  'JWT_SECRET',
+  'ENCRYPTION_KEY',
+  'ADMIN_GITHUB_USERNAME',
+  'ORG_CODE',
+];
+
+for (const key of required) {
+  if (!process.env[key]) {
+    console.error(`❌ Missing required env variable: ${key}`);
+    process.exit(1);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Create Fastify app
+// ──────────────────────────────────────────────
 const app = Fastify({ logger: true });
 
-// Plugins
-await app.register(fastifyCookie);
-await app.register(fastifySession, { secret: process.env.SESSION_SECRET!, cookie: { secure: false } });
-await app.register(passport.initialize());
-await app.register(passport.secureSession());
-
-// GitHub Strategy
-passport.use(new GitHubStrategy(
-  {
-    clientID: process.env.GITHUB_CLIENT_ID!,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-    callbackURL: `${process.env.SERVER_URL}/auth/github/callback`,
-  },
-  async (_accessToken, _refreshToken, profile, done) => {
-    try {
-      const tokenEnc = encrypt(_accessToken);
-      const result = await pool.query(
-        `INSERT INTO users (github_id, username, avatar_url, github_token_enc)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (github_id) DO UPDATE
-           SET github_token_enc = EXCLUDED.github_token_enc,
-               username = EXCLUDED.username
-         RETURNING id, username`,
-        [profile.id, profile.username, profile.photos?.[0]?.value, tokenEnc]
-      );
-      done(null, result.rows[0]);
-    } catch (err) {
-      done(err as Error);
-    }
-  }
-));
-
-passport.registerUserSerializer(async (user: any) => user.id);
-passport.registerUserDeserializer(async (id: string) => {
-  const r = await pool.query('SELECT id, username FROM users WHERE id = $1', [id]);
-  return r.rows[0];
+// CORS — allow client origin
+await app.register(fastifyCors, {
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true,
 });
+
+// Plugins (order matters: session → passport)
+await app.register(sessionPlugin);
+await app.register(passportPlugin);
 
 // Routes
 await app.register(authRoutes);
-await app.register(repoRoutes, { prefix: '/api' });
-await app.register(githubRoutes, { prefix: '/api' });
 
-await app.listen({ port: Number(process.env.PORT ?? 3000) });
+// Seed / update organization code hash in the database
+await seedOrgCode();
+
+// Health check
+app.get('/health', async () => {
+  return { status: 'ok' };
+});
+
+// ──────────────────────────────────────────────
+// Start server
+// ──────────────────────────────────────────────
+const PORT = Number(process.env.PORT ?? 3000);
+
+try {
+  await app.listen({ port: PORT, host: '0.0.0.0' });
+  console.log(`🚀 Server running on port ${PORT}`);
+} catch (err) {
+  app.log.error(err);
+  process.exit(1);
+}
