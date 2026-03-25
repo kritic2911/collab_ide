@@ -4,6 +4,8 @@ import fastifyCors from '@fastify/cors';
 import sessionPlugin from './plugins/session.plugin.js';
 import passportPlugin from './plugins/passport.plugin.js';
 import { authRoutes } from './routes/auth.routes.js';
+import { repoRoutes } from './routes/repo.routes.js';
+import { githubRoutes } from './routes/github.routes.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
 
 // ──────────────────────────────────────────────
@@ -43,6 +45,8 @@ await app.register(passportPlugin);
 
 // Routes
 await app.register(authRoutes);
+await app.register(repoRoutes);
+await app.register(githubRoutes);
 
 // Seed / update organization code hash in the database
 await seedOrgCode();
