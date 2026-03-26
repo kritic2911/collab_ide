@@ -6,7 +6,9 @@ import passportPlugin from './plugins/passport.plugin.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { repoRoutes } from './routes/repo.routes.js';
 import { githubRoutes } from './routes/github.routes.js';
+import { adminRoutes } from './routes/admin.routes.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
+import { seedRoles } from './db/seedRoles.js';
 
 // ──────────────────────────────────────────────
 // Env validation — crash immediately if anything missing
@@ -47,9 +49,13 @@ await app.register(passportPlugin);
 await app.register(authRoutes);
 await app.register(repoRoutes);
 await app.register(githubRoutes);
+await app.register(adminRoutes);
 
 // Seed / update organization code hash in the database
 await seedOrgCode();
+
+// Seed predefined roles
+await seedRoles();
 
 // Health check
 app.get('/health', async () => {

@@ -51,7 +51,9 @@ export function getUser(): JwtPayload | null {
   if (!token) return null;
 
   try {
-    const base64Payload = token.split('.')[1];
+    const base64Payload = token.split('.')[1]
+      .replace(/-/g, '+')   // add this
+      .replace(/_/g, '/');  // add this
     const payload = JSON.parse(atob(base64Payload));
     return {
       userId: payload.userId,
@@ -64,7 +66,6 @@ export function getUser(): JwtPayload | null {
     return null;
   }
 }
-
 /**
  * Logout — remove token from localStorage, call server logout, redirect to login.
  */
@@ -75,7 +76,8 @@ export async function logout(): Promise<void> {
 
   if (token) {
     try {
-      await fetch('http://localhost:3000/auth/logout', {
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000';
+      await fetch(`${apiUrl}/auth/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });

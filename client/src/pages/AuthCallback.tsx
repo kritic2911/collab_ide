@@ -1,4 +1,4 @@
-import { useAuthCallback } from '../hooks/useAuth.js';
+import { useAuthCallback } from '../hooks/useAuth';
 
 export default function AuthCallback() {
   useAuthCallback();

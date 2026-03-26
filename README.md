@@ -83,3 +83,60 @@ collab-ide/
 └── .gitignore
 ``` 
 
+## Local setup (quick)
+
+### Postgres: fixing “password authentication failed”
+
+The server connects using `server/.env` → `DATABASE_URL`.
+
+- If you are using **local Postgres (Windows service)**, update `server/.env` so the password matches your local `postgres` user password.
+- If you intended to use **Docker**, you’ll need Docker installed and available in PATH; otherwise the `docker-compose.yml` file won’t run.
+
+If you previously created the DB/user with a different password, either:
+
+- **Change the URL to the correct password** in `server/.env`, or
+- **Reset the `postgres` password** (example):
+
+```sql
+ALTER USER postgres WITH PASSWORD 'password';
+```
+
+Then restart the server.
+
+### Postgres via Docker (recommended for shared dev)
+
+This repo already includes `docker-compose.yml` for Postgres.
+
+- **Install Docker Desktop** (Windows) and make sure `docker` works in a new terminal (`docker --version`).
+- **Start Postgres** (from repo root):
+
+```bash
+docker compose up -d db
+```
+
+- **Use the shared DB URL** in `server/.env` (or copy `server/.env.docker.example` → `server/.env`):
+
+`DATABASE_URL=postgresql://postgres:password@localhost:5432/collabide`
+
+- **If you ever change `POSTGRES_PASSWORD`** in `docker-compose.yml`, you must reset the volume (otherwise the old password stays):
+
+```bash
+docker compose down -v
+docker compose up -d db
+```
+
+#### Running the migration against the Docker DB
+
+From repo root (runs `psql` inside the container):
+
+```bash
+docker compose exec -T db psql -U postgres -d collabide -f /dev/stdin < server/src/db/migrations/002_admin_portal.sql
+```
+
+### Client env
+
+Create `client/.env` from `client/.env.example` and keep:
+
+- `VITE_API_URL=http://localhost:3000`
+
+

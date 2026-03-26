@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-const API_URL = 'http://localhost:3000';
+const DEFAULT_API_URL = 'http://localhost:3000';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -157,6 +157,12 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
 
+  const apiUrl = useMemo(() => {
+    // Prefer Vite env if present (keeps client/server in sync)
+    // Fallback to localhost for new dev setups.
+    return (import.meta as any).env?.VITE_API_URL || DEFAULT_API_URL;
+  }, []);
+
   const [orgCode, setOrgCode] = useState('');
   const [codeVerified, setCodeVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -167,7 +173,7 @@ export default function Login() {
     setVerifying(true);
     setCodeError('');
     try {
-      const res = await fetch(`${API_URL}/auth/verify-code`, {
+      const res = await fetch(`${apiUrl}/auth/verify-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orgCode: orgCode.trim() }),
@@ -186,7 +192,7 @@ export default function Login() {
   };
 
   const handleLogin = () => {
-    window.location.href = `${API_URL}/auth/github?orgCode=${encodeURIComponent(orgCode.trim())}`;
+    window.location.href = `${apiUrl}/auth/github?orgCode=${encodeURIComponent(orgCode.trim())}`;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
