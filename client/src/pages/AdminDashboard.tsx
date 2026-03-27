@@ -32,7 +32,6 @@ export default function AdminDashboard() {
 
   const [newRole, setNewRole] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupUserIds, setNewGroupUserIds] = useState<number[]>([]);
 
   const [expandedRoles, setExpandedRoles] = useState<Set<number>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
@@ -42,6 +41,11 @@ export default function AdminDashboard() {
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [bulkRole, setBulkRole] = useState('');
   const [bulkGroupId, setBulkGroupId] = useState<number | null>(null);
+
+  const assignableRoles = useMemo(
+    () => roles.filter((r) => r.name !== 'admin'),
+    [roles]
+  );
 
   const onBulkRoleChange = async () => {
     if (!bulkRole || selectedUserIds.length === 0) return;
@@ -144,14 +148,37 @@ export default function AdminDashboard() {
     }
   };
 
+  const onDeleteRole = async (roleId: number) => {
+    setError(null);
+    try {
+      await api.delete(`/api/admin/roles/${roleId}`);
+      setRoles((prev) => prev.filter((r) => r.id !== roleId));
+      setExpandedRoles((prev) => { const s = new Set(prev); s.delete(roleId); return s; });
+      const next = await fetchUsers();
+      setUsers(next);
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? e?.message ?? 'Failed to delete role');
+    }
+  };
+
+  const onRemoveFromRole = async (userId: number) => {
+    setError(null);
+    try {
+      await api.put(`/api/admin/users/${userId}/role`, { role: 'user' });
+      const next = await fetchUsers();
+      setUsers(next);
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? e?.message ?? 'Failed to remove user from role');
+    }
+  };
+
   const onCreateGroup = async () => {
     const name = newGroupName.trim();
     if (!name) return;
     setError(null);
     try {
-      await createGroup(name, newGroupUserIds);
+      await createGroup(name, []);
       setNewGroupName('');
-      setNewGroupUserIds([]);
       const next = await fetchGroups();
       setGroups(next);
     } catch (e: any) {
@@ -187,11 +214,10 @@ export default function AdminDashboard() {
   const toggleGroup = (id: number) =>
     setExpandedGroups((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const usersForRole = (roleId: number) =>
-    users.filter((u) => {
-      const roleName = roles.find((r) => r.id === roleId)?.name;
-      return u.role === roleName;
-    });
+  const usersForRole = (roleId: number) => {
+    const roleName = roles.find((r) => r.id === roleId)?.name;
+    return users.filter((u) => u.role === roleName);
+  };
 
   const usersForGroup = (groupId: number) => {
     const group = groups.find((g) => g.id === groupId);
@@ -290,7 +316,7 @@ export default function AdminDashboard() {
         <div style={cardStyle}>
           <div style={{ fontWeight: 800 }}>Users</div>
           <div style={{ marginTop: 4, color: colors.muted, fontSize: 13 }}>
-            Select users to change their role or add to a group.
+            Select users to assign a role or add to a group.
           </div>
           <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
             {users.map((u) => {
@@ -334,8 +360,10 @@ export default function AdminDashboard() {
               <select value={bulkRole} onChange={(e) => setBulkRole(e.target.value)}
                 style={{ ...inputStyle, flex: 1, minWidth: 140 }}>
                 <option value="">Change role to…</option>
-                <option value="admin">admin</option>
                 <option value="user">user</option>
+                {assignableRoles.filter((r) => r.name !== 'user').map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
               </select>
               <button onClick={onBulkRoleChange} style={{ ...buttonPrimary, fontSize: 13 }}>Apply role</button>
               <select value={bulkGroupId ?? ''} onChange={(e) => setBulkGroupId(Number(e.target.value) || null)}
@@ -351,8 +379,6 @@ export default function AdminDashboard() {
         {/* Roles */}
         <div style={cardStyle}>
           <div style={{ fontWeight: 800 }}>Roles</div>
-
-          {/* Add role */}
           <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
             <input value={newRole} onChange={(e) => setNewRole(e.target.value)}
               placeholder="New role name" style={inputStyle}
@@ -360,34 +386,42 @@ export default function AdminDashboard() {
             <button onClick={onCreateRole} style={{ ...buttonPrimary, whiteSpace: 'nowrap' }}>Add</button>
           </div>
 
-          {/* Role list with expandable users */}
           <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
-            {roles.map((r) => {
+            {roles.filter((r) => r.name !== 'admin').map((r) => {
               const isOpen = expandedRoles.has(r.id);
               const members = usersForRole(r.id);
+              const isPredefined = r.is_predefined;
               return (
                 <div key={r.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 12, overflow: 'hidden' }}>
-                  <button
-                    onClick={() => toggleRole(r.id)}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 12px', background: 'transparent', border: 'none',
-                      cursor: 'pointer', color: colors.text,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', gap: 8 }}>
+                    <button
+                      onClick={() => toggleRole(r.id)}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+                        background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text, padding: 0,
+                      }}
+                    >
                       <span style={{ fontSize: 11, color: colors.muted }}>{isOpen ? '▾' : '▸'}</span>
                       <span style={{ fontWeight: 700, fontSize: 13 }}>{r.name}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ color: colors.muted, fontSize: 12 }}>{members.length} users</span>
-                      {r.is_predefined && (
+                      {isPredefined && (
                         <span style={{ color: colors.muted, fontSize: 11, background: colors.bg2, padding: '2px 6px', borderRadius: 6 }}>
                           predefined
                         </span>
                       )}
-                    </div>
-                  </button>
+                    </button>
+                    {!isPredefined && (
+                      <button
+                        onClick={() => onDeleteRole(r.id)}
+                        style={{
+                          ...buttonBase, fontSize: 12, padding: '4px 10px',
+                          color: colors.danger, borderColor: 'rgba(248,81,73,0.3)',
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
 
                   {isOpen && (
                     <div style={{ borderTop: `1px solid ${colors.border}`, padding: '6px 12px 10px' }}>
@@ -397,7 +431,7 @@ export default function AdminDashboard() {
                         members.map((u) => (
                           <div key={u.id} style={{
                             display: 'flex', alignItems: 'center', gap: 8,
-                            padding: '5px 0', borderBottom: `1px solid ${colors.border}`,
+                            padding: '6px 0', borderBottom: `1px solid ${colors.border}`,
                           }}>
                             <div style={{
                               width: 26, height: 26, borderRadius: '50%',
@@ -407,7 +441,18 @@ export default function AdminDashboard() {
                             }}>
                               {u.username.slice(0, 2).toUpperCase()}
                             </div>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>{u.username}</span>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600 }}>{u.username}</span>
+                              <span style={{ color: colors.muted, fontSize: 12, marginLeft: 8 }}>{u.role}</span>
+                            </div>
+                            {!isPredefined && (
+                              <button
+                                onClick={() => onRemoveFromRole(u.id)}
+                                style={{ ...buttonBase, fontSize: 12, padding: '3px 8px', color: colors.muted }}
+                              >
+                                Remove
+                              </button>
+                            )}
                           </div>
                         ))
                       )}
@@ -421,45 +466,16 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Row 3: Groups ── */}
-      <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+      <div style={{ marginTop: 12 }}>
         <div style={cardStyle}>
           <div style={{ fontWeight: 800 }}>Groups</div>
-
-          {/* Add group */}
-          <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="New group name" style={inputStyle}
-                onKeyDown={(e) => e.key === 'Enter' && onCreateGroup()} />
-              <button onClick={onCreateGroup} style={{ ...buttonPrimary, whiteSpace: 'nowrap' }}>Create group</button>
-            </div>
-            {/* <div style={{ color: colors.muted, fontSize: 12, fontWeight: 700 }}>Initial members (optional)</div> */}
-            {/* <div style={{
-              border: `1px solid ${colors.border}`, borderRadius: 12, padding: 10,
-              maxHeight: 140, overflow: 'auto',
-            }}>
-              {users.length === 0 ? (
-                <div style={{ color: colors.muted, fontSize: 13 }}>No users found.</div>
-              ) : (
-                users.map((u) => {
-                  const checked = newGroupUserIds.includes(u.id);
-                  return (
-                    <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 6px', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={checked} onChange={() =>
-                        setNewGroupUserIds((prev) =>
-                          prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id]
-                        )
-                      } />
-                      <span style={{ fontWeight: 700, fontSize: 13 }}>{u.username}</span>
-                      <span style={{ color: colors.muted, fontSize: 12 }}>({u.role})</span>
-                    </label>
-                  );
-                })
-              )}
-            </div> */}
+          <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+            <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="New group name" style={inputStyle}
+              onKeyDown={(e) => e.key === 'Enter' && onCreateGroup()} />
+            <button onClick={onCreateGroup} style={{ ...buttonPrimary, whiteSpace: 'nowrap' }}>Create group</button>
           </div>
 
-          {/* Group list with expandable members */}
           <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
             {groups.length === 0 ? (
               <div style={{ color: colors.muted, fontSize: 13 }}>No groups yet.</div>
@@ -588,10 +604,16 @@ function RepoAccessCard({
 
         {visibility === 'restricted' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <MultiSelect label="Roles" options={roles.map((r) => ({ id: r.id, label: r.name }))}
-              selected={roleIds} onChange={setRoleIds} />
-            <MultiSelect label="Groups" options={groups.map((g) => ({ id: g.id, label: g.name }))}
-              selected={groupIds} onChange={setGroupIds} />
+            <MultiSelect
+              label="Roles"
+              options={roles.filter((r) => r.name !== 'admin').map((r) => ({ id: r.id, label: r.name }))}
+              selected={roleIds} onChange={setRoleIds}
+            />
+            <MultiSelect
+              label="Groups"
+              options={groups.map((g) => ({ id: g.id, label: g.name }))}
+              selected={groupIds} onChange={setGroupIds}
+            />
           </div>
         )}
 

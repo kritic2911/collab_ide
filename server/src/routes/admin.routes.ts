@@ -243,13 +243,21 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const { id } = req.params;
       const { role } = req.body;
-      if (!['admin', 'user'].includes(role)) {
-        return reply.status(400).send({ error: 'Invalid role' });
+
+      if (!role?.trim()) {
+        return reply.status(400).send({ error: 'Role is required' });
       }
+
       try {
+        // Validate that the role actually exists in the roles table
+        const roleCheck = await db.query('SELECT name FROM roles WHERE name = $1', [role.trim()]);
+        if (roleCheck.rows.length === 0) {
+          return reply.status(400).send({ error: 'Invalid role' });
+        }
+
         const result = await db.query(
           'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, username, role',
-          [role, id]
+          [role.trim(), id]
         );
         if (result.rows.length === 0) {
           return reply.status(404).send({ error: 'User not found' });
@@ -305,4 +313,28 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return { removed: true };
     }
   );
+  app.delete<{ Params: { id: string } }>(
+    '/api/admin/roles/:id',
+    { preHandler: [requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params;
+      const role = await db.query('SELECT * FROM roles WHERE id = $1', [id]);
+      if (role.rows.length === 0) return reply.status(404).send({ error: 'Role not found' });
+      if (role.rows[0].is_predefined) return reply.status(400).send({ error: 'Cannot delete predefined roles' });
+      // Reset all users with this role back to 'user'
+      await db.query('UPDATE users SET role = $1 WHERE role = $2', ['user', role.rows[0].name]);
+      await db.query('DELETE FROM roles WHERE id = $1', [id]);
+      return { deleted: true };
+    }
+  );
+  app.delete<{ Params: { id: string; userId: string } }>(
+    '/api/admin/roles/:id/users/:userId',
+    { preHandler: [requireAdmin] },
+    async (req, reply) => {
+      const { id, userId } = req.params;
+      await db.query('UPDATE users SET role = $1 WHERE id = $2', ['user', userId]);
+      return { removed: true };
+    }
+  );
+
 };
