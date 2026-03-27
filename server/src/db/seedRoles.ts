@@ -1,6 +1,6 @@
 import { db } from './client.js';
 
-const PREDEFINED_ROLES = ['admin', 'editor', 'viewer'];
+const PREDEFINED_ROLES = ['admin', 'user'];
 
 /**
  * Seeds predefined roles into the `roles` table if they don't already exist.

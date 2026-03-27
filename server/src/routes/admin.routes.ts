@@ -233,4 +233,76 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     );
     return result.rows;
   });
+  // ═══════════════════════════════════════════════
+  // USERS — update role
+  // ═══════════════════════════════════════════════
+
+  app.put<{ Params: { id: string }; Body: { role: string } }>(
+    '/api/admin/users/:id/role',
+    { preHandler: [requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params;
+      const { role } = req.body;
+      if (!['admin', 'user'].includes(role)) {
+        return reply.status(400).send({ error: 'Invalid role' });
+      }
+      try {
+        const result = await db.query(
+          'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, username, role',
+          [role, id]
+        );
+        if (result.rows.length === 0) {
+          return reply.status(404).send({ error: 'User not found' });
+        }
+        return result.rows[0];
+      } catch (err: any) {
+        return reply.status(500).send({ error: err.message });
+      }
+    }
+  );
+
+  // ═══════════════════════════════════════════════
+  // GROUPS — add member
+  // ═══════════════════════════════════════════════
+
+  app.post<{ Params: { id: string }; Body: { user_id: number } }>(
+    '/api/admin/groups/:id/members',
+    { preHandler: [requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params;
+      const { user_id } = req.body;
+      try {
+        await db.query(
+          'INSERT INTO user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [user_id, id]
+        );
+        return { added: true };
+      } catch (err: any) {
+        return reply.status(500).send({ error: err.message });
+      }
+    }
+  );
+  // Delete a group
+  app.delete<{ Params: { id: string } }>(
+    '/api/admin/groups/:id',
+    { preHandler: [requireAdmin] },
+    async (req, reply) => {
+      const { id } = req.params;
+      await db.query('DELETE FROM user_groups WHERE group_id = $1', [id]);
+      const result = await db.query('DELETE FROM groups WHERE id = $1 RETURNING id', [id]);
+      if (result.rows.length === 0) return reply.status(404).send({ error: 'Group not found' });
+      return { deleted: true };
+    }
+  );
+
+  // Remove a member from a group
+  app.delete<{ Params: { id: string; userId: string } }>(
+    '/api/admin/groups/:id/members/:userId',
+    { preHandler: [requireAdmin] },
+    async (req, reply) => {
+      const { id, userId } = req.params;
+      await db.query('DELETE FROM user_groups WHERE group_id = $1 AND user_id = $2', [id, userId]);
+      return { removed: true };
+    }
+  );
 };
