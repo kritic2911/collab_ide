@@ -76,7 +76,7 @@ export async function logout(): Promise<void> {
 
   if (token) {
     try {
-      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001';
       await fetch(`${apiUrl}/auth/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },

@@ -7,7 +7,14 @@ export function makeOctokit(token: string) {
 export async function listUserRepos(token: string) {
   const octokit = makeOctokit(token);
   const { data } = await octokit.repos.listForAuthenticatedUser({ per_page: 100 });
-  return data.map(r => ({ owner: r.owner.login, repo: r.name, private: r.private }));
+  return data.map(r => ({
+    id: r.id,
+    name: r.name,
+    full_name: r.full_name,
+    owner: { login: r.owner.login },
+    default_branch: r.default_branch,
+    private: r.private,
+  }));
 }
 
 export async function verifyRepoAccess(token: string, owner: string, repo: string) {

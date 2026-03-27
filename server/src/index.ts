@@ -23,6 +23,7 @@ const required = [
   'ORG_CODE',
 ];
 
+
 for (const key of required) {
   if (!process.env[key]) {
     console.error(`❌ Missing required env variable: ${key}`);
@@ -35,11 +36,16 @@ for (const key of required) {
 // ──────────────────────────────────────────────
 const app = Fastify({ logger: true });
 
-// CORS — allow client origin
 await app.register(fastifyCors, {
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // add this line
 });
+// CORS — allow client origin
+// await app.register(fastifyCors, {
+//   origin: process.env.CLIENT_URL || 'http://localhost:5173',
+//   credentials: true,
+// });
 
 // Plugins (order matters: session → passport)
 await app.register(sessionPlugin);
@@ -65,7 +71,7 @@ app.get('/health', async () => {
 // ──────────────────────────────────────────────
 // Start server
 // ──────────────────────────────────────────────
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = Number(process.env.PORT ?? 3001);
 
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });

@@ -33,7 +33,7 @@ export default function AdminDashboard() {
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupUserIds, setNewGroupUserIds] = useState<number[]>([]);
 
-  const connectedRepoIds = useMemo(() => new Set(connected.map((r) => r.github_repo_id)), [connected]);
+  const connectedRepoIds = useMemo(() => new Set(connected.map((r) => Number(r.github_repo_id))), [connected]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -167,7 +167,7 @@ export default function AdminDashboard() {
               <div style={{ color: colors.muted, fontSize: 13 }}>No repos found (or token missing).</div>
             ) : (
               githubRepos.slice(0, 30).map((r) => {
-                const already = connectedRepoIds.has(r.id);
+                const already = connectedRepoIds.has(Number(r.id));
                 return (
                   <div
                     key={r.id}
@@ -207,8 +207,31 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-
         <div style={cardStyle}>
+          <div style={{ fontWeight: 800 }}>Connected repos (access)</div>
+          <div style={{ marginTop: 6, color: colors.muted, fontSize: 13 }}>
+            Set “restricted” and pick roles/groups. Access is OR logic.
+          </div>
+
+          <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+            {connected.length === 0 ? (
+              <div style={{ color: colors.muted, fontSize: 13 }}>No connected repos yet.</div>
+            ) : (
+              connected.map((r) => (
+                <RepoAccessCard
+                  key={r.id}
+                  repo={r}
+                  roles={roles}
+                  groups={groups}
+                  onDisconnect={() => onDisconnect(r.id)}
+                  onSave={onUpdateAccess}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* <div style={cardStyle}>
           <div style={{ fontWeight: 800 }}>Roles</div>
           <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
             <input
@@ -239,7 +262,7 @@ export default function AdminDashboard() {
               </div>
             ))}
           </div>
-        </div>
+        </div> */}
       </div>
 
       <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -314,29 +337,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div style={cardStyle}>
-          <div style={{ fontWeight: 800 }}>Connected repos (access)</div>
-          <div style={{ marginTop: 6, color: colors.muted, fontSize: 13 }}>
-            Set “restricted” and pick roles/groups. Access is OR logic.
-          </div>
 
-          <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-            {connected.length === 0 ? (
-              <div style={{ color: colors.muted, fontSize: 13 }}>No connected repos yet.</div>
-            ) : (
-              connected.map((r) => (
-                <RepoAccessCard
-                  key={r.id}
-                  repo={r}
-                  roles={roles}
-                  groups={groups}
-                  onDisconnect={() => onDisconnect(r.id)}
-                  onSave={onUpdateAccess}
-                />
-              ))
-            )}
-          </div>
-        </div>
       </div>
     </Shell>
   );

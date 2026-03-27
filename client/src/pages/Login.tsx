@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-const DEFAULT_API_URL = 'http://localhost:3000';
+const DEFAULT_API_URL = 'http://localhost:3001';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -222,9 +222,15 @@ export default function Login() {
           <label style={styles.label} htmlFor="org-code-input">
             Organization Code
           </label>
+          {/* Hidden dummy fields to prevent browser autofill */}
+          <input type="text" name="prevent_autofill" id="prevent_autofill" style={{ display: 'none' }} tabIndex={-1} />
+          <input type="password" name="prevent_autofill_pw" id="prevent_autofill_pw" style={{ display: 'none' }} tabIndex={-1} />
           <input
             id="org-code-input"
-            type="password"
+            type="text"
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
             placeholder="Enter your organization code"
             value={orgCode}
             onChange={(e) => {
@@ -235,12 +241,13 @@ export default function Login() {
             onKeyDown={handleKeyDown}
             style={{
               ...styles.input,
+              WebkitTextSecurity: 'disc',
               borderColor: codeError
                 ? 'rgba(248, 81, 73, 0.6)'
                 : codeVerified
                   ? 'rgba(63, 185, 80, 0.6)'
                   : 'rgba(240, 246, 252, 0.15)',
-            }}
+            } as React.CSSProperties}
             disabled={verifying}
           />
         </div>
