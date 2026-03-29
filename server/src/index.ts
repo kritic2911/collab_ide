@@ -7,6 +7,7 @@ import { authRoutes } from './routes/auth.routes.js';
 import { repoRoutes } from './routes/repo.routes.js';
 import { githubRoutes } from './routes/github.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
+import wsPlugin from './plugins/wsPlugin.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
 import { seedRoles } from './db/seedRoles.js';
 
@@ -47,9 +48,10 @@ await app.register(fastifyCors, {
 //   credentials: true,
 // });
 
-// Plugins (order matters: session → passport)
+// Plugins (order matters: session → passport → websocket)
 await app.register(sessionPlugin);
 await app.register(passportPlugin);
+await app.register(wsPlugin);
 
 // Routes
 await app.register(authRoutes);
