@@ -25,13 +25,13 @@ export function getRoomId(repoId: string, branch: string, filePath: string): str
 // ──────────────────────────────────────────────
 // joinRoom — add a connection to a room with its initial content
 // ──────────────────────────────────────────────
-export function joinRoom(roomId: string, conn: AuthenticatedSocket, content: string): void {
+export function joinRoom(roomId: string, conn: AuthenticatedSocket, initialContent: string): void {
   let room = rooms.get(roomId);
   if (!room) {
     room = new Map();
     rooms.set(roomId, room);
   }
-  room.set(conn, { content, seq: 0 });
+  room.set(conn, { content: initialContent, seq: 0 });
 }
 
 // ──────────────────────────────────────────────
@@ -90,7 +90,7 @@ export function broadcastToRoom(
 
   const payload = JSON.stringify(msg);
 
-  for (const [conn] of room) {
+  for (const [conn] of room.entries()) {
     if (conn === excludeConn) continue;
     if (conn.readyState === conn.OPEN) {
       conn.send(payload);
@@ -107,12 +107,20 @@ export function getRoomPeers(
   const room = rooms.get(roomId);
   if (!room) return [];
 
-  return Array.from(room).map(([conn, state]) => ({
+  return Array.from(room.entries()).map(([conn, state]) => ({
     username: conn.user.username,
     avatarUrl: conn.user.avatarUrl || null,
     currentContent: state.content,
     seq: state.seq,
   }));
+}
+
+export function updatePeerState(roomId: string, conn: AuthenticatedSocket, content: string, seq: number): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  if (room.has(conn)) {
+    room.set(conn, { content, seq });
+  }
 }
 
 // ──────────────────────────────────────────────

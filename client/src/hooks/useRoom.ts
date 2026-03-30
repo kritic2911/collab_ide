@@ -6,7 +6,7 @@ export function useRoom(
   repoId: number | null,
   branch: string | null,
   filePath: string | null,
-  fileContent: string,
+  content: string,
   snapshotKey: string,
 ) {
   const currentRoom = useRef<string | null>(null);
@@ -22,7 +22,7 @@ export function useRoom(
       repoId: String(repoId), 
       branch, 
       filePath,
-      content: fileContent,
+      content,
     });
     const roomId = `${repoId}:${branch}:${normalizedFile}`;
     currentRoom.current = roomId;

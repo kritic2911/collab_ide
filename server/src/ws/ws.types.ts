@@ -29,7 +29,7 @@ export type ClientMessage =
       repoId: string;
       branch: string;
       filePath: string; // e.g. "src/components/Editor.tsx"
-      content: string;  // current editor text — baseline for shadow doc
+      content: string;  // user's current editor content
     }
   | {
       type: 'leave_room';

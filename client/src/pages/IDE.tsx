@@ -127,6 +127,7 @@ export default function IDE() {
   const {
     roomId,
     peers,
+    peerDocuments,
     selectedPeerUsername,
     setRoom,
     setPeers,
@@ -424,12 +425,20 @@ export default function IDE() {
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             {activePath ? (
-              selectedPeerUsername && peers.has(selectedPeerUsername) ? (
+              selectedPeerUsername && peerDocuments.has(selectedPeerUsername) ? (
                 <PeerDiffWindow
                   myContent={fileContent}
                   peerUsername={selectedPeerUsername}
                   filePath={activePath}
                   onClose={() => setSelectedPeerUsername(null)}
+                  onValueChange={setFileContent}
+                  onDiffUpdate={(patches) => {
+                    if (!isConnected) return;
+                    const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
+                    if (!rid) return;
+                    diffSeqRef.current += 1;
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
+                  }}
                 />
               ) : (
                 <CollabEditor

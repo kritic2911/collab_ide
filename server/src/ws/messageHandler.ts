@@ -6,8 +6,7 @@ import {
   broadcastToRoom,
   getRoomPeers,
   removeFromAllRooms,
-  getPeerDocState,
-  updatePeerContent,
+  updatePeerState,
 } from './roomManager.js';
 
 // ──────────────────────────────────────────────
@@ -17,41 +16,26 @@ const MAX_CONTENT_BYTES = 500 * 1024; // 500 KB cap
 
 // ──────────────────────────────────────────────
 // applyPatches — apply Monaco-shaped DiffPatch[] to a string
-// Processes patches in reverse offset order to avoid index shifts.
 // ──────────────────────────────────────────────
 export function applyPatches(text: string, patches: DiffPatch[]): string {
-  const withOffsets = patches.map(p => ({
-    ...p,
-    startOffset: offsetFromRange(text, p.range),
-    endOffset: offsetFromRange(text, {
-      startLineNumber: p.range.endLineNumber,
-      startColumn: p.range.endColumn,
-      endLineNumber: p.range.endLineNumber,
-      endColumn: p.range.endColumn
-    }),
-  }));
-
-  const sorted = withOffsets.sort((a, b) => b.startOffset - a.startOffset);
-
   let result = text;
-  for (const p of sorted) {
-    result = result.slice(0, p.startOffset) + p.text + result.slice(p.endOffset);
+  for (const patch of patches) {
+    const lines = result.split('\n');
+    let startOffset = 0;
+    for (let i = 0; i < patch.range.startLineNumber - 1; i++) {
+      startOffset += lines[i].length + 1;
+    }
+    startOffset += patch.range.startColumn - 1;
+
+    let endOffset = 0;
+    for (let i = 0; i < patch.range.endLineNumber - 1; i++) {
+      endOffset += lines[i].length + 1;
+    }
+    endOffset += patch.range.endColumn - 1;
+
+    result = result.substring(0, startOffset) + patch.text + result.substring(endOffset);
   }
   return result;
-}
-
-/** Convert Monaco 1-based line/col range to a 0-based string offset. */
-function offsetFromRange(
-  text: string,
-  range: DiffPatch['range'],
-): number {
-  const lines = text.split('\n');
-  let offset = 0;
-  for (let i = 0; i < range.startLineNumber - 1 && i < lines.length; i++) {
-    offset += lines[i].length + 1; // +1 for the \n
-  }
-  offset += range.startColumn - 1;
-  return Math.min(offset, text.length);
 }
 
 // ──────────────────────────────────────────────
@@ -121,7 +105,7 @@ function onJoinRoom(
   const filePath = msg.filePath.replace(/\\/g, '/').replace(/^\//, '');
   const roomId = getRoomId(msg.repoId, msg.branch, filePath);
 
-  // Add to room with initial content
+  // Add to room
   joinRoom(roomId, conn, content);
 
   // Send room_joined back to this connection with current peer list (includes content+seq)
@@ -164,11 +148,11 @@ function onDiffUpdate(
   conn: AuthenticatedSocket,
   msg: Extract<ClientMessage, { type: 'diff_update' }>,
 ): void {
-  // Apply patches to this peer's tracked shadow document
-  const state = getPeerDocState(msg.roomId, conn);
-  if (state) {
-    const updated = applyPatches(state.content, msg.patches);
-    updatePeerContent(msg.roomId, conn, updated, msg.seq);
+  const peers = getRoomPeers(msg.roomId);
+  const me = peers.find(p => p.username === conn.user.username);
+  if (me) {
+     const newContent = applyPatches(me.currentContent, msg.patches);
+     updatePeerState(msg.roomId, conn, newContent, msg.seq);
   }
 
   // Relay as peer_diff to everyone else in the room

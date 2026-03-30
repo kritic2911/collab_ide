@@ -148,11 +148,10 @@ export const useCollabStore = create<CollabStore>((set) => ({
       const nextPeers = new Map(state.peers);
       nextPeers.delete(username);
 
-      const nextDocs = new Map(state.peerDocuments);
-      nextDocs.delete(username);
-
-      const selected = state.selectedPeerUsername === username ? null : state.selectedPeerUsername;
-      return { peers: nextPeers, peerDocuments: nextDocs, selectedPeerUsername: selected };
+      // We do NOT delete from state.peerDocuments or state.selectedPeerUsername here.
+      // This allows the diff window to remain open "frozen" if they leave or switch files,
+      // until the user manually closes the diff panel.
+      return { peers: nextPeers };
     }),
 
   peerDiff: (username, patches, seq) =>
