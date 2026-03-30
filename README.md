@@ -10,6 +10,7 @@
 |Database|PostgreSQL only|Need to handle only user profiles, connected repos, chat messages|
 |In-memory state|Plain JS Maps|Replaces Redis for MVP|
 |Auth|GitHub OAuth via Passport.js|Gives you user identity + repo access in one flow|
+|Collaboration UI| Zustand + React Hooks | Native WebSocket, presence dots, and Monaco line-level peer highlighting with hover-diff summaries|
 
 ## Database
 ### Basic tables needed
