@@ -5,6 +5,7 @@ import InvalidCode from './pages/InvalidCode';
 import Dashboard from './pages/Dashboard';
 import RepoBrowser from './pages/RepoBrowser';
 import AdminDashboard from './pages/AdminDashboard';
+import IDE from './pages/IDE';
 import { getUser, isLoggedIn } from './hooks/useAuth';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,14 @@ export default function App() {
         element={
           <RequireAuth>
             <RepoBrowser />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/ide/:repoId"
+        element={
+          <RequireAuth>
+            <IDE />
           </RequireAuth>
         }
       />

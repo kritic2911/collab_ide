@@ -7,6 +7,8 @@ import { authRoutes } from './routes/auth.routes.js';
 import { repoRoutes } from './routes/repo.routes.js';
 import { githubRoutes } from './routes/github.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
+import { webhookRoutes } from './routes/webhook.routes.js';
+import { wsPlugin } from './plugins/ws.plugin.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
 import { seedRoles } from './db/seedRoles.js';
 
@@ -39,13 +41,8 @@ const app = Fastify({ logger: true });
 await app.register(fastifyCors, {
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // add this line
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
 });
-// CORS — allow client origin
-// await app.register(fastifyCors, {
-//   origin: process.env.CLIENT_URL || 'http://localhost:5173',
-//   credentials: true,
-// });
 
 // Plugins (order matters: session → passport)
 await app.register(sessionPlugin);
@@ -56,6 +53,8 @@ await app.register(authRoutes);
 await app.register(repoRoutes);
 await app.register(githubRoutes);
 await app.register(adminRoutes);
+await app.register(webhookRoutes);
+await app.register(wsPlugin);
 
 // Seed / update organization code hash in the database
 await seedOrgCode();
