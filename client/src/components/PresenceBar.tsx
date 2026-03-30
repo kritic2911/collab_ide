@@ -1,4 +1,4 @@
-import { useCollabStore } from '../store/collabStore';
+import { useCollabStore, colorFromUsername } from '../store/collabStore';
 import { colors } from '../ui/styles';
 
 function initials(username: string): string {
@@ -55,13 +55,3 @@ export default function PresenceBar() {
   );
 }
 
-function colorFromUsername(username: string): string {
-  // Deterministic color from username (no color coming over the wire).
-  let hash = 0;
-  for (let i = 0; i < username.length; i++) hash = (hash * 31 + username.charCodeAt(i)) >>> 0;
-  const r = hash & 0xff;
-  const g = (hash >> 8) & 0xff;
-  const b = (hash >> 16) & 0xff;
-  const toHex = (n: number) => n.toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}

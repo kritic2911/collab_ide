@@ -124,7 +124,9 @@ export default function PeerDiffGutter({ editor, monaco, peerHighlight }: PeerDi
         decoCollection.current.clear();
       }
     };
-  }, [editor, monaco, peerHighlight]);
+  // Include the model URI so decorations re-run when user navigates to a different file
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, monaco, peerHighlight, editor?.getModel()?.uri.toString()]);
 
   return null;
 }

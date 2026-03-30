@@ -4,11 +4,12 @@ import Shell from '../ui/Shell';
 import { colors, cardStyle, inputStyle, buttonBase } from '../ui/styles';
 import { fetchBranches, fetchFileContent, fetchFileTree, fetchRepos } from '../api/admin';
 import { useRepoStore } from '../store/repoStore';
-import { useCollabStore } from '../store/collabStore';
+import { useCollabStore, colorFromUsername } from '../store/collabStore';
 import { useCollabSocket } from '../hooks/useCollabSocket';
 import { useRoom } from '../hooks/useRoom';
 import PresenceBar from '../components/PresenceBar';
 import CollabEditor from '../components/CollabEditor';
+import PeerDiffWindow from '../components/PeerDiffWindow';
 import WebhookLog from '../components/WebhookLog';
 
 type TreeNode = {
@@ -181,7 +182,9 @@ export default function IDE() {
     isConnected,
     selectedRepo?.id ?? null,
     selectedBranch,
-    filePathNorm
+    filePathNorm,
+    fileContent,
+    snapshotKey,
   );
 
   useEffect(() => {
@@ -315,15 +318,7 @@ export default function IDE() {
     };
   }, [selectedPeerUsername, peers]);
 
-  function colorFromUsername(username: string): string {
-    let hash = 0;
-    for (let i = 0; i < username.length; i++) hash = (hash * 31 + username.charCodeAt(i)) >>> 0;
-    const r = hash & 0xff;
-    const g = (hash >> 8) & 0xff;
-    const b = (hash >> 16) & 0xff;
-    const toHex = (n: number) => n.toString(16).padStart(2, '0');
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-  }
+
 
   if (!Number.isFinite(repoIdNum)) {
     return (
@@ -429,20 +424,29 @@ export default function IDE() {
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             {activePath ? (
-              <CollabEditor
-                path={activePath}
-                value={fileContent}
-                snapshotKey={snapshotKey}
-                onValueChange={setFileContent}
-                onDiffUpdate={(patches) => {
-                  if (!isConnected) return;
-                  const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
-                  if (!rid) return;
-                  diffSeqRef.current += 1;
-                  sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
-                }}
-                peerHighlight={peerHighlight}
-              />
+              selectedPeerUsername && peers.has(selectedPeerUsername) ? (
+                <PeerDiffWindow
+                  myContent={fileContent}
+                  peerUsername={selectedPeerUsername}
+                  filePath={activePath}
+                  onClose={() => setSelectedPeerUsername(null)}
+                />
+              ) : (
+                <CollabEditor
+                  path={activePath}
+                  value={fileContent}
+                  snapshotKey={snapshotKey}
+                  onValueChange={setFileContent}
+                  onDiffUpdate={(patches) => {
+                    if (!isConnected) return;
+                    const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
+                    if (!rid) return;
+                    diffSeqRef.current += 1;
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
+                  }}
+                  peerHighlight={peerHighlight}
+                />
+              )
             ) : (
               <div style={{ padding: 16, color: colors.muted }}>Pick a file from the tree.</div>
             )}

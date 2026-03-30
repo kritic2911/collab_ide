@@ -1,9 +1,17 @@
 import type { AuthenticatedSocket, ServerMessage } from './ws.types.js';
 
 // ──────────────────────────────────────────────
-// Room data structure — Map<roomId, Set<AuthenticatedSocket>>
+// Per-connection document state
 // ──────────────────────────────────────────────
-const rooms = new Map<string, Set<AuthenticatedSocket>>();
+export type PeerDocState = {
+  content: string;
+  seq: number;
+};
+
+// ──────────────────────────────────────────────
+// Room data structure — Map<roomId, Map<AuthenticatedSocket, PeerDocState>>
+// ──────────────────────────────────────────────
+const rooms = new Map<string, Map<AuthenticatedSocket, PeerDocState>>();
 
 // ──────────────────────────────────────────────
 // getRoomId — deterministic room key
@@ -15,15 +23,43 @@ export function getRoomId(repoId: string, branch: string, filePath: string): str
 }
 
 // ──────────────────────────────────────────────
-// joinRoom — add a connection to a room
+// joinRoom — add a connection to a room with its initial content
 // ──────────────────────────────────────────────
-export function joinRoom(roomId: string, conn: AuthenticatedSocket): void {
+export function joinRoom(roomId: string, conn: AuthenticatedSocket, content: string): void {
   let room = rooms.get(roomId);
   if (!room) {
-    room = new Set();
+    room = new Map();
     rooms.set(roomId, room);
   }
-  room.add(conn);
+  room.set(conn, { content, seq: 0 });
+}
+
+// ──────────────────────────────────────────────
+// updatePeerContent — update tracked content after applying patches
+// ──────────────────────────────────────────────
+export function updatePeerContent(
+  roomId: string,
+  conn: AuthenticatedSocket,
+  content: string,
+  seq: number,
+): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const state = room.get(conn);
+  if (state) {
+    state.content = content;
+    state.seq = seq;
+  }
+}
+
+// ──────────────────────────────────────────────
+// getPeerDocState — get a single connection's tracked state
+// ──────────────────────────────────────────────
+export function getPeerDocState(
+  roomId: string,
+  conn: AuthenticatedSocket,
+): PeerDocState | undefined {
+  return rooms.get(roomId)?.get(conn);
 }
 
 // ──────────────────────────────────────────────
@@ -54,7 +90,7 @@ export function broadcastToRoom(
 
   const payload = JSON.stringify(msg);
 
-  for (const conn of room) {
+  for (const [conn] of room) {
     if (conn === excludeConn) continue;
     if (conn.readyState === conn.OPEN) {
       conn.send(payload);
@@ -63,15 +99,19 @@ export function broadcastToRoom(
 }
 
 // ──────────────────────────────────────────────
-// getRoomPeers — list of peers currently in a room
+// getRoomPeers — list of peers currently in a room (with their content)
 // ──────────────────────────────────────────────
-export function getRoomPeers(roomId: string): { username: string; avatarUrl: string | null }[] {
+export function getRoomPeers(
+  roomId: string,
+): { username: string; avatarUrl: string | null; currentContent: string; seq: number }[] {
   const room = rooms.get(roomId);
   if (!room) return [];
 
-  return Array.from(room).map((conn) => ({
+  return Array.from(room).map(([conn, state]) => ({
     username: conn.user.username,
     avatarUrl: conn.user.avatarUrl || null,
+    currentContent: state.content,
+    seq: state.seq,
   }));
 }
 

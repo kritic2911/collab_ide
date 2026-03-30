@@ -72,20 +72,17 @@ export default function CollabEditor({
     setMonacoInst(monaco);
 
     editor.onDidChangeModelContent((e) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        const patches: DiffPatch[] = e.changes.map((ch) => ({
-          range: {
-            startLineNumber: ch.range.startLineNumber,
-            startColumn: ch.range.startColumn,
-            endLineNumber: ch.range.endLineNumber,
-            endColumn: ch.range.endColumn,
-          },
-          text: ch.text,
-          rangeLength: ch.rangeLength,
-        }));
-        onDiffUpdate(patches);
-      }, 350);
+      const patches: DiffPatch[] = e.changes.map((ch) => ({
+        range: {
+          startLineNumber: ch.range.startLineNumber,
+          startColumn: ch.range.startColumn,
+          endLineNumber: ch.range.endLineNumber,
+          endColumn: ch.range.endColumn,
+        },
+        text: ch.text,
+        rangeLength: ch.rangeLength,
+      }));
+      onDiffUpdate(patches);
     });
 
 

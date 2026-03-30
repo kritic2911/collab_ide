@@ -49,14 +49,19 @@ export function useCollabSocket(
             }
             break;
           case 'peer_joined':
-            if (msg.username) peerJoined({ username: msg.username, avatarUrl: msg.avatarUrl || null });
+            if (msg.username) peerJoined({
+              username: msg.username,
+              avatarUrl: msg.avatarUrl || null,
+              currentContent: msg.currentContent ?? '',
+              seq: msg.seq ?? 0,
+            });
             break;
           case 'peer_left':
             if (msg.username) peerLeft(msg.username);
             break;
           case 'peer_diff':
             if (msg.username && msg.patches) {
-              peerDiff(msg.username, msg.patches, Date.now());
+              peerDiff(msg.username, msg.patches, msg.seq ?? Date.now());
             }
             break;
           case 'remote_push':
