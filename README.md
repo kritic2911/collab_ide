@@ -139,4 +139,10 @@ Create `client/.env` from `client/.env.example` and keep:
 
 - `VITE_API_URL=http://localhost:3000`
 
+### Webhooks & Local Development
 
+For GitHub webhooks to reach your local environment, GitHub cannot reach `localhost` directly.
+1. Install and run `ngrok http 3001` to create a public tunnel.
+2. Set `WEBHOOK_TARGET_URL=https://<your-ngrok-id>.ngrok-free.app/webhooks/github` in `server/.env`.
+3. Set `GITHUB_WEBHOOK_SECRET=your-secure-secret` in `server/.env`.
+4. When adding a repository via the backend API, it will automatically register this webhook URL using these environment variables. Teammates must do this or the webhooks won't fire locally.

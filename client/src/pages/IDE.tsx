@@ -5,7 +5,8 @@ import { colors, cardStyle, inputStyle, buttonBase } from '../ui/styles';
 import { fetchBranches, fetchFileContent, fetchFileTree, fetchRepos } from '../api/admin';
 import { useRepoStore } from '../store/repoStore';
 import { useCollabStore } from '../store/collabStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useCollabSocket } from '../hooks/useCollabSocket';
+import { useRoom } from '../hooks/useRoom';
 import PresenceBar from '../components/PresenceBar';
 import CollabEditor from '../components/CollabEditor';
 import WebhookLog from '../components/WebhookLog';
@@ -160,58 +161,30 @@ export default function IDE() {
   const currentRoomIdRef = useRef<string | null>(null);
   const diffSeqRef = useRef(0);
 
-  const { ready, send } = useWebSocket({
-    enabled: Number.isFinite(repoIdNum),
-    onMessage: useCallback(
-      (msg: Record<string, unknown>) => {
-        const type = msg.type as string;
-        const msgRoomId = (msg.roomId as string | undefined) ?? null;
+  const { sendMessage, isConnected } = useCollabSocket(Number.isFinite(repoIdNum));
 
-        // Ignore room-scoped updates if they don't match the currently joined room.
-        if (
-          type !== 'room_joined' &&
-          type !== 'remote_push' &&
-          msgRoomId &&
-          currentRoomIdRef.current &&
-          msgRoomId !== currentRoomIdRef.current
-        ) {
-          return;
-        }
+  useRoom(
+    sendMessage,
+    isConnected,
+    selectedRepo?.id ?? null,
+    selectedBranch,
+    filePathNorm
+  );
 
-        if (type === 'room_joined') {
-          const joinedRoomId = msg.roomId as string;
-          currentRoomIdRef.current = joinedRoomId;
-          diffSeqRef.current = 0;
-          setRoom(joinedRoomId);
-          setPeers((msg.peers as { username: string; avatarUrl: string | null }[]) ?? []);
-          setSelectedPeerUsername(null);
-        } else if (type === 'peer_joined') {
-          if (!msgRoomId || msgRoomId !== currentRoomIdRef.current) return;
-          peerJoined({
-            username: msg.username as string,
-            avatarUrl: (msg.avatarUrl as string | null) ?? null,
-          });
-        } else if (type === 'peer_left') {
-          if (!msgRoomId || msgRoomId !== currentRoomIdRef.current) return;
-          peerLeft(msg.username as string);
-        } else if (type === 'peer_diff') {
-          if (!msgRoomId || msgRoomId !== currentRoomIdRef.current) return;
-          peerDiff(msg.username as string, msg.patches as any, msg.seq as number);
-        } else if (type === 'remote_push') {
-          // For the UI: map remote_push into the WebhookLog row shape (best-effort).
-          if (!msgRoomId || msgRoomId !== currentRoomIdRef.current) return;
-          setLiveWebhook({
-            id: Date.now(),
-            event_type: 'push',
-            action: null,
-            sender_username: msg.pushedBy as string,
-            received_at: new Date().toISOString(),
-          });
-        }
-      },
-      [peerDiff, peerJoined, peerLeft, setPeers, setRoom, setSelectedPeerUsername]
-    ),
-  });
+  useEffect(() => {
+    const handlePush = (e: Event) => {
+      const msg = (e as CustomEvent).detail;
+      setLiveWebhook({
+        id: Date.now(),
+        event_type: 'push',
+        action: null,
+        sender_username: msg.pushedBy as string,
+        received_at: new Date().toISOString(),
+      });
+    };
+    window.addEventListener('collab:remote_push', handlePush);
+    return () => window.removeEventListener('collab:remote_push', handlePush);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,31 +249,7 @@ export default function IDE() {
     };
   }, [selectedRepo, selectedBranch, setFileTree]);
 
-  useEffect(() => {
-    if (!ready || !selectedRepo || !selectedBranch || !filePathNorm) return;
 
-    if (currentRoomIdRef.current) {
-      send({ type: 'leave_room', roomId: currentRoomIdRef.current });
-    }
-    currentRoomIdRef.current = null;
-    diffSeqRef.current = 0;
-    setLiveWebhook(null);
-    clearCollab();
-
-    send({
-      type: 'join_room',
-      repoId: String(selectedRepo.id),
-      branch: selectedBranch,
-      filePath: filePathNorm,
-    });
-
-    return () => {
-      if (currentRoomIdRef.current) {
-        send({ type: 'leave_room', roomId: currentRoomIdRef.current });
-        currentRoomIdRef.current = null;
-      }
-    };
-  }, [ready, selectedRepo, selectedBranch, filePathNorm, send, clearCollab]);
 
   const onSelectFile = async (path: string) => {
     if (!selectedRepo || !selectedBranch) return;
@@ -391,8 +340,8 @@ export default function IDE() {
               onChange={(e) => selectBranch(e.target.value)}
               style={{ ...inputStyle, marginTop: 6 }}
             >
-              {branches.map((b) => (
-                <option key={b.name} value={b.name}>
+              {branches.map((b, idx) => (
+                <option key={`${idx}-${b.name}`} value={b.name}>
                   {b.name}
                 </option>
               ))}
@@ -435,11 +384,11 @@ export default function IDE() {
                 snapshotKey={snapshotKey}
                 onValueChange={setFileContent}
                 onDiffUpdate={(patches) => {
-                  if (!ready) return;
-                  const rid = currentRoomIdRef.current;
+                  if (!isConnected) return;
+                  const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                   if (!rid) return;
                   diffSeqRef.current += 1;
-                  send({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
+                  sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
                 }}
                 peerHighlight={peerHighlight}
               />
@@ -448,7 +397,7 @@ export default function IDE() {
             )}
           </div>
           <div style={{ padding: '6px 12px', borderTop: `1px solid ${colors.border}`, fontSize: 11, color: colors.muted }}>
-            {ready ? 'Collaboration connected' : 'Connecting…'} {loadingFile ? ' · Loading file…' : ''}
+            {isConnected ? 'Collaboration connected' : 'Connecting…'} {loadingFile ? ' · Loading file…' : ''}
           </div>
         </div>
 

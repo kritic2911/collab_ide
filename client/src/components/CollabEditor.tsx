@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import type { DiffPatch } from '../store/collabStore';
+import PeerDiffGutter from './PeerDiffGutter';
 
 function guessLanguage(path: string): string {
   const lower = path.toLowerCase();
@@ -55,71 +56,20 @@ export default function CollabEditor({
   onDiffUpdate,
   peerHighlight,
 }: CollabEditorProps) {
-  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<typeof Monaco | null>(null);
+  const [editorInst, setEditorInst] = useState<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [monacoInst, setMonacoInst] = useState<typeof Monaco | null>(null);
   const originalRef = useRef<string>(value);
-  const decoIds = useRef<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
 
   useEffect(() => {
     originalRef.current = value;
   }, [snapshotKey]);
 
-  function applyPeerDecorations(
-    editor: Monaco.editor.IStandaloneCodeEditor,
-    monaco: typeof Monaco,
-    highlight: CollabEditorProps['peerHighlight'] | null | undefined
-  ) {
-    const model = editor.getModel();
-    if (!model) return;
 
-    if (!highlight) {
-      decoIds.current = editor.deltaDecorations(decoIds.current, []);
-      return;
-    }
-
-    const { color, patches } = highlight;
-    const hex = color.replace('#', '');
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    const bg = (a: number) => `rgba(${r},${g},${b},${a})`;
-
-    const decos: Monaco.editor.IModelDeltaDecoration[] = [];
-    const linesToHighlight = new Set<number>();
-    for (const p of patches) {
-      const start = Math.min(p.range.startLineNumber, p.range.endLineNumber);
-      const end = Math.max(p.range.startLineNumber, p.range.endLineNumber);
-      for (let ln = start; ln <= end; ln++) linesToHighlight.add(ln);
-    }
-
-    for (const ln of linesToHighlight) {
-      const line = Math.min(Math.max(1, ln), model.getLineCount());
-      decos.push({
-        range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
-        options: {
-          isWholeLine: true,
-          overviewRuler: {
-            color: bg(0.45),
-            position: monaco.editor.OverviewRulerLane.Full,
-          },
-        },
-      });
-    }
-
-    decoIds.current = editor.deltaDecorations(decoIds.current, decos);
-  }
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    if (!editor || !monaco) return;
-    applyPeerDecorations(editor, monaco, peerHighlight ?? null);
-  }, [peerHighlight, snapshotKey]);
 
   const onMount: OnMount = (editor, monaco) => {
-    editorRef.current = editor;
-    monacoRef.current = monaco;
+    setEditorInst(editor);
+    setMonacoInst(monaco);
 
     editor.onDidChangeModelContent((e) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -138,25 +88,28 @@ export default function CollabEditor({
       }, 350);
     });
 
-    applyPeerDecorations(editor, monaco, peerHighlight ?? null);
+
   };
 
   return (
-    <Editor
-      key={snapshotKey}
-      height="100%"
-      theme="vs-dark"
-      path={path}
-      language={guessLanguage(path)}
-      value={value}
-      onChange={(v) => onValueChange(v ?? '')}
-      onMount={onMount}
-      options={{
-        readOnly: false,
-        minimap: { enabled: true },
-        fontSize: 13,
-        wordWrap: 'on',
-      }}
-    />
+    <>
+      <Editor
+        key={snapshotKey}
+        height="100%"
+        theme="vs-dark"
+        path={path}
+        language={guessLanguage(path)}
+        value={value}
+        onChange={(v) => onValueChange(v ?? '')}
+        onMount={onMount}
+        options={{
+          readOnly: false,
+          minimap: { enabled: true },
+          fontSize: 13,
+          wordWrap: 'on',
+        }}
+      />
+      <PeerDiffGutter editor={editorInst} monaco={monacoInst} peerHighlight={peerHighlight} />
+    </>
   );
 }

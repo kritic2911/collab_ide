@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
+import formbody from '@fastify/formbody';
 import { Readable } from 'node:stream';
 import crypto from 'node:crypto';
 import { db } from '../db/client.js';
@@ -28,6 +29,7 @@ function verifySignature(payload: string, signature: string | undefined, secret:
 // ──────────────────────────────────────────────
 
 export const webhookRoutes: FastifyPluginAsync = async (app) => {
+  await app.register(formbody);
 
   /**
    * POST /webhooks/github
@@ -68,7 +70,17 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: 'Missing X-GitHub-Event header' });
     }
 
-    const body = req.body as Record<string, unknown>;
+    // GitHub sometimes sends application/x-www-form-urlencoded with 'payload=...'
+    let body: Record<string, any>;
+    if (typeof req.body === 'object' && req.body !== null && 'payload' in req.body) {
+      try {
+        body = JSON.parse((req.body as any).payload);
+      } catch {
+        body = req.body as Record<string, any>;
+      }
+    } else {
+      body = req.body as Record<string, any>;
+    }
     const githubRepoId = (body as { repository?: { id?: number } })?.repository?.id;
     const senderUsername =
       (body as { sender?: { login?: string } })?.sender?.login || 'unknown';
@@ -113,15 +125,31 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
       const changedFilesSet = new Set<string>();
       if (Array.isArray(commits)) {
         for (const c of commits) {
-          const added: string[] = Array.isArray(c.added) ? c.added : [];
+          // As per assignment instructions: pull out commits[].modified for changed file paths
           const modified: string[] = Array.isArray(c.modified) ? c.modified : [];
-          const removed: string[] = Array.isArray(c.removed) ? c.removed : [];
-          for (const f of [...added, ...modified, ...removed]) changedFilesSet.add(String(f));
+          for (const f of modified) changedFilesSet.add(String(f));
         }
       }
       const changedFiles = Array.from(changedFilesSet);
 
-      broadcastRemotePush(repoId, branch, senderUsername, changedFiles, commitSha);
+      // TODO: import { broadcastToRoom, getRoomId } from '../ws/roomManager.js';
+      // For now we use the ones exported from ws.plugin.js if available, or just log.
+      // (Assuming getRoomId is manually duplicated or imported properly)
+      
+      const { broadcastToRoom } = await import('../plugins/ws.plugin.js');
+      // Simple re-implementation of getRoomId to avoid modifying ws.plugin.ts unnecessarily
+      const getRoomIdLocal = (rId: string, b: string, f: string) => `${rId}:${b}:${f.replace(/^[\\\\/]+/, '').replace(/\\\\/g, '/')}`;
+      for (const file of changedFiles) {
+        const roomId = getRoomIdLocal(String(repoId), branch, file);
+        broadcastToRoom(roomId, {
+          type: 'remote_push',
+          roomId,
+          pushedBy: senderUsername,
+          branch,
+          changedFiles,
+          commitSha
+        });
+      }
     }
 
     const row = inserted.rows[0];

@@ -55,7 +55,6 @@ await app.register(repoRoutes);
 await app.register(githubRoutes);
 await app.register(adminRoutes);
 await app.register(webhookRoutes);
-await app.register(wsPlugin);
 
 // Seed / update organization code hash in the database
 await seedOrgCode();

@@ -79,7 +79,7 @@ export const useCollabStore = create<CollabStore>((set) => ({
       const next = new Map(state.peers);
       const prev = next.get(username);
       if (prev) {
-        next.set(username, { ...prev, patches, seq });
+        next.set(username, { ...prev, patches: [...prev.patches, ...patches], seq });
       } else {
         next.set(username, { username, avatarUrl: null, patches, seq });
       }
