@@ -40,14 +40,15 @@ export const useCollabStore = create<CollabStore>((set) => ({
   setRoom: (roomId) => set({ roomId }),
 
   setPeers: (list) =>
-    set(() => {
+    set((state) => {
       const next = new Map<string, PeerState>();
       for (const p of list) {
+        const prev = state.peers.get(p.username);
         next.set(p.username, {
           username: p.username,
           avatarUrl: p.avatarUrl,
-          patches: [],
-          seq: 0,
+          patches: prev?.patches ?? [],
+          seq: prev?.seq ?? 0,
         });
       }
       return { peers: next };

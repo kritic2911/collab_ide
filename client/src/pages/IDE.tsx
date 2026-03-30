@@ -152,6 +152,8 @@ export default function IDE() {
     sender_username: string;
     received_at: string;
   } | null>(null);
+  const [remotePushBanner, setRemotePushBanner] = useState<string | null>(null);
+  const bannerTimeoutRef = useRef<number | null>(null);
 
   const filePathNorm = useMemo(() => {
     if (!activePath) return null;
@@ -161,7 +163,18 @@ export default function IDE() {
   const currentRoomIdRef = useRef<string | null>(null);
   const diffSeqRef = useRef(0);
 
-  const { sendMessage, isConnected } = useCollabSocket(Number.isFinite(repoIdNum));
+  const handleRoomJoined = useCallback((roomId: string) => {
+    currentRoomIdRef.current = roomId;
+  }, []);
+
+  useEffect(() => {
+    currentRoomIdRef.current = null;
+  }, [selectedRepo?.id, selectedBranch, filePathNorm]);
+
+  const { sendMessage, isConnected } = useCollabSocket(
+    Number.isFinite(repoIdNum),
+    handleRoomJoined
+  );
 
   useRoom(
     sendMessage,
@@ -173,17 +186,39 @@ export default function IDE() {
 
   useEffect(() => {
     const handlePush = (e: Event) => {
-      const msg = (e as CustomEvent).detail;
+      const msg = (e as CustomEvent).detail as {
+        pushedBy: string;
+        changedFiles: string[];
+      };
+      const firstFile = Array.isArray(msg.changedFiles) && msg.changedFiles.length > 0
+        ? msg.changedFiles[0]
+        : 'files';
+
       setLiveWebhook({
         id: Date.now(),
         event_type: 'push',
         action: null,
-        sender_username: msg.pushedBy as string,
+        sender_username: msg.pushedBy,
         received_at: new Date().toISOString(),
       });
+
+      setRemotePushBanner(`${msg.pushedBy} pushed ${firstFile} — your diff may now conflict.`);
+      if (bannerTimeoutRef.current) {
+        window.clearTimeout(bannerTimeoutRef.current);
+      }
+      bannerTimeoutRef.current = window.setTimeout(() => {
+        setRemotePushBanner(null);
+        bannerTimeoutRef.current = null;
+      }, 7000);
     };
+
     window.addEventListener('collab:remote_push', handlePush);
-    return () => window.removeEventListener('collab:remote_push', handlePush);
+    return () => {
+      window.removeEventListener('collab:remote_push', handlePush);
+      if (bannerTimeoutRef.current) {
+        window.clearTimeout(bannerTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -375,6 +410,22 @@ export default function IDE() {
             <div style={{ marginTop: 8 }}>
               <PresenceBar />
             </div>
+            {remotePushBanner && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(255, 199, 115, 0.16)',
+                  border: '1px solid rgba(255, 199, 115, 0.35)',
+                  color: '#8a5d03',
+                  fontSize: 13,
+                  lineHeight: 1.4,
+                }}
+              >
+                {remotePushBanner}
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             {activePath ? (

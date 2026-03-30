@@ -8,7 +8,10 @@ interface CollabSocketResult {
   isConnected: boolean;
 }
 
-export function useCollabSocket(enabled: boolean): CollabSocketResult {
+export function useCollabSocket(
+  enabled: boolean,
+  onRoomJoined?: (roomId: string) => void
+): CollabSocketResult {
   const ws = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimeout = useRef<number>();
@@ -41,6 +44,9 @@ export function useCollabSocket(enabled: boolean): CollabSocketResult {
         switch (msg.type) {
           case 'room_joined':
             setPeers(msg.peers || []);
+            if (onRoomJoined && msg.roomId) {
+              onRoomJoined(msg.roomId);
+            }
             break;
           case 'peer_joined':
             if (msg.username) peerJoined({ username: msg.username, avatarUrl: msg.avatarUrl || null });
@@ -85,7 +91,7 @@ export function useCollabSocket(enabled: boolean): CollabSocketResult {
     };
 
     ws.current = socket;
-  }, [enabled, setPeers, peerJoined, peerLeft, peerDiff]);
+  }, [enabled, onRoomJoined, setPeers, peerJoined, peerLeft, peerDiff]);
 
   useEffect(() => {
     connect();
