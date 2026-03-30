@@ -44,9 +44,10 @@ await app.register(fastifyCors, {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
 });
 
-// Plugins (order matters: session → passport)
+// Plugins (order matters: session → passport → websocket)
 await app.register(sessionPlugin);
 await app.register(passportPlugin);
+await app.register(wsPlugin);
 
 // Routes
 await app.register(authRoutes);
