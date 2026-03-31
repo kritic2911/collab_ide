@@ -127,13 +127,8 @@ export default function IDE() {
   const {
     roomId,
     peers,
-    peerDocuments,
     selectedPeerUsername,
     setRoom,
-    setPeers,
-    peerJoined,
-    peerLeft,
-    peerDiff,
     setSelectedPeerUsername,
     clear: clearCollab,
   } = useCollabStore();
@@ -173,10 +168,37 @@ export default function IDE() {
     currentRoomIdRef.current = null;
   }, [selectedRepo?.id, selectedBranch, filePathNorm]);
 
+  // ── Peer content state & polling ──
+  const [peerContent, setPeerContent] = useState<string | null>(null);
+
   const { sendMessage, isConnected } = useCollabSocket(
     Number.isFinite(repoIdNum),
-    handleRoomJoined
+    handleRoomJoined,
+    (username, content) => {
+      if (username === selectedPeerUsername) {
+        setPeerContent(content);
+      }
+    }
   );
+
+  useEffect(() => {
+    if (!selectedPeerUsername || !isConnected || !currentRoomIdRef.current) {
+      setPeerContent(null);
+      return;
+    }
+
+    const roomId = currentRoomIdRef.current;
+    sendMessage({ type: 'request_peer_content', roomId, username: selectedPeerUsername });
+
+    const timer = window.setInterval(() => {
+      sendMessage({ type: 'request_peer_content', roomId, username: selectedPeerUsername });
+    }, 5000);
+
+    return () => {
+      window.clearInterval(timer);
+      setPeerContent(null);
+    };
+  }, [selectedPeerUsername, isConnected, sendMessage]);
 
   useRoom(
     sendMessage,
@@ -184,8 +206,7 @@ export default function IDE() {
     selectedRepo?.id ?? null,
     selectedBranch,
     filePathNorm,
-    fileContent,
-    snapshotKey,
+    activePath ? fileContent : null
   );
 
   useEffect(() => {
@@ -288,8 +309,6 @@ export default function IDE() {
     };
   }, [selectedRepo, selectedBranch, setFileTree]);
 
-
-
   const onSelectFile = async (path: string) => {
     if (!selectedRepo || !selectedBranch) return;
     setError(null);
@@ -318,8 +337,6 @@ export default function IDE() {
       patches: p.patches,
     };
   }, [selectedPeerUsername, peers]);
-
-
 
   if (!Number.isFinite(repoIdNum)) {
     return (
@@ -425,9 +442,10 @@ export default function IDE() {
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             {activePath ? (
-              selectedPeerUsername && peerDocuments.has(selectedPeerUsername) ? (
+              selectedPeerUsername && peers.has(selectedPeerUsername) ? (
                 <PeerDiffWindow
                   myContent={fileContent}
+                  peerContent={peerContent}
                   peerUsername={selectedPeerUsername}
                   filePath={activePath}
                   onClose={() => setSelectedPeerUsername(null)}

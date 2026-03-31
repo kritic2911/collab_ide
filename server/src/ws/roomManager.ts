@@ -143,3 +143,18 @@ export function removeFromAllRooms(conn: AuthenticatedSocket): string[] {
 
   return affectedRooms;
 }
+
+// ──────────────────────────────────────────────
+// getPeerContent — look up a peer's stored document by username
+// ──────────────────────────────────────────────
+export function getPeerContent(roomId: string, username: string): string | null {
+  const room = rooms.get(roomId);
+  if (!room) return null;
+
+  for (const [conn, state] of room.entries()) {
+    if (conn.user.username === username) {
+      return state.content;
+    }
+  }
+  return null;
+}

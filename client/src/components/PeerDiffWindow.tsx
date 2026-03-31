@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
-import { useCollabStore, colorFromUsername, DiffPatch } from '../store/collabStore';
+import { colorFromUsername, type DiffPatch } from '../store/collabStore';
 import { colors, buttonBase } from '../ui/styles';
 
 function guessLanguage(path: string): string {
@@ -18,21 +18,9 @@ function guessLanguage(path: string): string {
   return 'plaintext';
 }
 
-function injectDiffStyles(myColor: string, theirColor: string) {
-  let el = document.getElementById('collab-diff-styles');
-  if (!el) {
-    el = document.createElement('style');
-    el.id = 'collab-diff-styles';
-    document.head.appendChild(el);
-  }
-  el.innerHTML = `
-    .diff-marker-left  { background: ${myColor}33 !important; border-left: 3px solid ${myColor} !important; }
-    .diff-marker-right { background: ${theirColor}33 !important; border-left: 3px solid ${theirColor} !important; }
-  `;
-}
-
 export interface PeerDiffWindowProps {
   myContent: string;
+  peerContent: string | null;  // null = still loading
   peerUsername: string;
   filePath: string;
   onClose: () => void;
@@ -42,142 +30,62 @@ export interface PeerDiffWindowProps {
 
 export default function PeerDiffWindow({
   myContent,
+  peerContent,
   peerUsername,
   filePath,
   onClose,
   onValueChange,
   onDiffUpdate,
 }: PeerDiffWindowProps) {
-  const peerDocs = useCollabStore((s) => s.peerDocuments);
-  const peerDoc = peerDocs.get(peerUsername);
-  
   const [leftEditor, setLeftEditor] = useState<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const [rightEditor, setRightEditor] = useState<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const [monacoInst, setMonacoInst] = useState<typeof Monaco | null>(null);
-  
-  const leftDecoRef = useRef<any>(null);
-  const rightDecoRef = useRef<any>(null);
-  const debounceRef = useRef<number>();
+
+  const leftDecoRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const rightDecoRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
 
   const lang = useMemo(() => guessLanguage(filePath), [filePath]);
-  const myColor = '#58A6FF'; // Your own UI blue color preference
-  const theirColor = peerDoc?.color ?? colorFromUsername(peerUsername);
+  const myColor = '#58A6FF';
+  const theirColor = colorFromUsername(peerUsername);
 
+  // ── Inject dynamic diff styles ──
   useEffect(() => {
-    injectDiffStyles(myColor, theirColor);
+    let el = document.getElementById('collab-diff-styles');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'collab-diff-styles';
+      document.head.appendChild(el);
+    }
+    el.innerHTML = `
+      .diff-marker-left  { background: ${myColor}28 !important; border-left: 3px solid ${myColor} !important; }
+      .diff-marker-right { background: ${theirColor}28 !important; border-left: 3px solid ${theirColor} !important; }
+    `;
     return () => {
-      const el = document.getElementById('collab-diff-styles');
-      if (el) el.remove();
+      const styleEl = document.getElementById('collab-diff-styles');
+      if (styleEl) styleEl.remove();
     };
   }, [myColor, theirColor]);
 
-  // Handle setting diff highlighting whenever models change
-  useEffect(() => {
-    if (!leftEditor || !rightEditor || !monacoInst) return;
-    
-    let isHighlighting = false; // Prevents recursive loop
-    const highlightDiffs = () => {
-      if (isHighlighting) return;
-      isHighlighting = true;
-      try {
-          const leftLines = leftEditor.getModel()!.getLinesContent();
-          const rightLines = rightEditor.getModel()!.getLinesContent();
-          const maxLen = Math.max(leftLines.length, rightLines.length);
-
-          const leftDecos: Monaco.editor.IModelDeltaDecoration[] = [];
-          const rightDecos: Monaco.editor.IModelDeltaDecoration[] = [];
-
-          for (let i = 0; i < maxLen; i++) {
-            const lineNum = i + 1;
-            if (leftLines[i] !== rightLines[i]) {
-              if (i < leftLines.length) {
-                leftDecos.push({
-                  range: new monacoInst.Range(lineNum, 1, lineNum, 1),
-                  options: {
-                    isWholeLine: true,
-                    linesDecorationsClassName: 'diff-marker-left',
-                  }
-                });
-              }
-              if (i < rightLines.length) {
-                rightDecos.push({
-                  range: new monacoInst.Range(lineNum, 1, lineNum, 1),
-                  options: {
-                    isWholeLine: true,
-                    linesDecorationsClassName: 'diff-marker-right',
-                  }
-                });
-              }
-            }
-          }
-
-          if (!leftDecoRef.current) {
-            if (leftEditor.createDecorationsCollection) {
-              leftDecoRef.current = leftEditor.createDecorationsCollection(leftDecos);
-            } else {
-              leftDecoRef.current = {
-                ids: leftEditor.deltaDecorations([], leftDecos),
-                clear: () => leftEditor.deltaDecorations(leftDecoRef.current.ids, []),
-                set: (d: any) => { leftDecoRef.current.ids = leftEditor.deltaDecorations(leftDecoRef.current.ids, d); }
-              };
-            }
-          } else {
-            leftDecoRef.current.set(leftDecos);
-          }
-
-          if (!rightDecoRef.current) {
-            if (rightEditor.createDecorationsCollection) {
-              rightDecoRef.current = rightEditor.createDecorationsCollection(rightDecos);
-            } else {
-              rightDecoRef.current = {
-                ids: rightEditor.deltaDecorations([], rightDecos),
-                clear: () => rightEditor.deltaDecorations(rightDecoRef.current.ids, []),
-                set: (d: any) => { rightDecoRef.current.ids = rightEditor.deltaDecorations(rightDecoRef.current.ids, d); }
-              };
-            }
-          } else {
-            rightDecoRef.current.set(rightDecos);
-          }
-      } finally {
-        isHighlighting = false;
-      }
-    };
-
-    highlightDiffs();
-
-    // Re-run highlighting when models change
-    const lDisp = leftEditor.onDidChangeModelContent(() => highlightDiffs());
-    const rDisp = rightEditor.onDidChangeModelContent(() => highlightDiffs());
-
-    return () => {
-      lDisp.dispose();
-      rDisp.dispose();
-      leftDecoRef.current?.clear();
-      rightDecoRef.current?.clear();
-    };
-  }, [leftEditor, rightEditor, monacoInst]);
-
-  // Sync scrolling
+  // ── Synchronized scrolling ──
   useEffect(() => {
     if (!leftEditor || !rightEditor) return;
 
-    let isSyncingLeft = false;
-    let isSyncingRight = false;
+    let syncing = false;
 
     const onLeftScroll = leftEditor.onDidScrollChange((e) => {
-      if (isSyncingLeft) return;
-      isSyncingRight = true;
+      if (syncing) return;
+      syncing = true;
       rightEditor.setScrollTop(e.scrollTop);
       rightEditor.setScrollLeft(e.scrollLeft);
-      setTimeout(() => { isSyncingRight = false; }, 0);
+      requestAnimationFrame(() => { syncing = false; });
     });
 
     const onRightScroll = rightEditor.onDidScrollChange((e) => {
-      if (isSyncingRight) return;
-      isSyncingLeft = true;
+      if (syncing) return;
+      syncing = true;
       leftEditor.setScrollTop(e.scrollTop);
       leftEditor.setScrollLeft(e.scrollLeft);
-      setTimeout(() => { isSyncingLeft = false; }, 0);
+      requestAnimationFrame(() => { syncing = false; });
     });
 
     return () => {
@@ -186,62 +94,117 @@ export default function PeerDiffWindow({
     };
   }, [leftEditor, rightEditor]);
 
-  // Bind right editor content from peer tracking
+  // ── Recompute diff decorations whenever either side changes ──
   useEffect(() => {
-    if (!rightEditor || !peerDoc) return;
-    const model = rightEditor.getModel();
-    if (model && model.getValue() !== peerDoc.content) {
-      model.setValue(peerDoc.content);
-    }
-  }, [peerDoc, rightEditor]);
+    if (!leftEditor || !rightEditor || !monacoInst || peerContent === null) return;
 
+    const recomputeDiff = () => {
+      const leftLines = leftEditor.getModel()?.getLinesContent() ?? [];
+      const rightLines = rightEditor.getModel()?.getLinesContent() ?? [];
+      const maxLen = Math.max(leftLines.length, rightLines.length);
+
+      const leftD: Monaco.editor.IModelDeltaDecoration[] = [];
+      const rightD: Monaco.editor.IModelDeltaDecoration[] = [];
+
+      for (let i = 0; i < maxLen; i++) {
+        const ln = i + 1;
+        if (leftLines[i] !== rightLines[i]) {
+          if (i < leftLines.length) {
+            leftD.push({
+              range: new monacoInst.Range(ln, 1, ln, 1),
+              options: { isWholeLine: true, linesDecorationsClassName: 'diff-marker-left' },
+            });
+          }
+          if (i < rightLines.length) {
+            rightD.push({
+              range: new monacoInst.Range(ln, 1, ln, 1),
+              options: { isWholeLine: true, linesDecorationsClassName: 'diff-marker-right' },
+            });
+          }
+        }
+      }
+
+      if (!leftDecoRef.current) {
+        leftDecoRef.current = leftEditor.createDecorationsCollection(leftD);
+      } else {
+        leftDecoRef.current.set(leftD);
+      }
+
+      if (!rightDecoRef.current) {
+        rightDecoRef.current = rightEditor.createDecorationsCollection(rightD);
+      } else {
+        rightDecoRef.current.set(rightD);
+      }
+    };
+
+    recomputeDiff();
+
+    // Also recompute when content changes via typing
+    const lDisp = leftEditor.onDidChangeModelContent(() => recomputeDiff());
+    return () => { lDisp.dispose(); };
+  }, [leftEditor, rightEditor, monacoInst, peerContent, myContent]);
+
+  // ── Update right editor model when peer content arrives ──
+  useEffect(() => {
+    if (!rightEditor || peerContent === null) return;
+    const model = rightEditor.getModel();
+    if (model && model.getValue() !== peerContent) {
+      model.setValue(peerContent);
+    }
+  }, [peerContent, rightEditor]);
+
+  // ── Left editor mount: wire up patch reporting ──
   const onLeftMount: OnMount = (editor, monaco) => {
     setLeftEditor(editor);
     setMonacoInst(monaco);
 
-    // Patch reporting
     editor.onDidChangeModelContent((e) => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      debounceRef.current = window.setTimeout(() => {
-        const patches: DiffPatch[] = e.changes.map((ch) => ({
-          range: {
-            startLineNumber: ch.range.startLineNumber,
-            startColumn: ch.range.startColumn,
-            endLineNumber: ch.range.endLineNumber,
-            endColumn: ch.range.endColumn,
-          },
-          text: ch.text,
-          rangeLength: ch.rangeLength,
-        }));
-        onDiffUpdate(patches);
-      }, 350);
+      const patches: DiffPatch[] = e.changes.map((ch) => ({
+        range: {
+          startLineNumber: ch.range.startLineNumber,
+          startColumn: ch.range.startColumn,
+          endLineNumber: ch.range.endLineNumber,
+          endColumn: ch.range.endColumn,
+        },
+        text: ch.text,
+        rangeLength: ch.rangeLength,
+      }));
+      onDiffUpdate(patches);
     });
   };
 
   const onRightMount: OnMount = (editor, monaco) => {
     setRightEditor(editor);
-    setMonacoInst(monaco);
+    if (!monacoInst) setMonacoInst(monaco);
   };
-
-  if (!peerDoc) {
-    return (
-        <div style={{ padding: 16, color: colors.muted }}>
-            <p>Peer data not loaded. They may have disconnected.</p>
-            <button onClick={onClose} style={buttonBase}>Back to Editor</button>
-        </div>
-    );
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', padding: '8px 12px', background: colors.background, alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${colors.border}` }}>
+      {/* Header bar */}
+      <div style={{
+        display: 'flex',
+        padding: '8px 12px',
+        background: colors.bg0,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottom: `1px solid ${colors.border}`,
+      }}>
         <div style={{ fontSize: 13, color: colors.muted }}>
-          <span style={{ color: myColor, fontWeight: 'bold' }}>You</span> vs <span style={{ color: theirColor, fontWeight: 'bold' }}>{peerUsername}</span>
+          <span style={{ color: myColor, fontWeight: 'bold' }}>You</span>
+          {' vs '}
+          <span style={{ color: theirColor, fontWeight: 'bold' }}>{peerUsername}</span>
+          {peerContent === null && (
+            <span style={{ marginLeft: 12, opacity: 0.6 }}>Loading peer content…</span>
+          )}
         </div>
-        <button type="button" onClick={onClose} style={{ ...buttonBase, padding: '4px 8px', fontSize: 12 }}>Close Diff</button>
+        <button type="button" onClick={onClose} style={{ ...buttonBase, padding: '4px 8px', fontSize: 12 }}>
+          Close Diff
+        </button>
       </div>
 
+      {/* Two editors side-by-side */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Left: your file (editable) */}
         <div style={{ flex: 1, borderRight: `1px solid ${colors.border}` }}>
           <Editor
             height="100%"
@@ -256,22 +219,25 @@ export default function PeerDiffWindow({
               minimap: { enabled: false },
               fontSize: 13,
               wordWrap: 'on',
+              scrollBeyondLastLine: false,
             }}
           />
         </div>
+        {/* Right: peer's file (read-only) */}
         <div style={{ flex: 1 }}>
           <Editor
             height="100%"
             theme="vs-dark"
             path={`peer-${peerUsername}-${filePath}`}
             language={lang}
-            value={peerDoc.content}
+            value={peerContent ?? ''}
             onMount={onRightMount}
             options={{
               readOnly: true,
               minimap: { enabled: false },
               fontSize: 13,
               wordWrap: 'on',
+              scrollBeyondLastLine: false,
             }}
           />
         </div>

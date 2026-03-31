@@ -7,6 +7,7 @@ import {
   getRoomPeers,
   removeFromAllRooms,
   updatePeerState,
+  getPeerContent,
 } from './roomManager.js';
 
 // ──────────────────────────────────────────────
@@ -62,6 +63,10 @@ export function handleMessage(conn: AuthenticatedSocket, raw: string): void {
 
     case 'diff_update':
       onDiffUpdate(conn, msg);
+      break;
+
+    case 'request_peer_content':
+      onRequestPeerContent(conn, msg);
       break;
 
     default:
@@ -164,4 +169,20 @@ function onDiffUpdate(
     seq: msg.seq,
   };
   broadcastToRoom(msg.roomId, peerDiff, conn);
+}
+
+function onRequestPeerContent(
+  conn: AuthenticatedSocket,
+  msg: Extract<ClientMessage, { type: 'request_peer_content' }>,
+): void {
+  const content = getPeerContent(msg.roomId, msg.username);
+  if (content !== null) {
+    const response: ServerMessage = {
+      type: 'peer_content',
+      roomId: msg.roomId,
+      username: msg.username,
+      content,
+    };
+    conn.send(JSON.stringify(response));
+  }
 }

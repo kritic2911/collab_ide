@@ -10,13 +10,20 @@ interface CollabSocketResult {
 
 export function useCollabSocket(
   enabled: boolean,
-  onRoomJoined?: (roomId: string) => void
+  onRoomJoined?: (roomId: string) => void,
+  onPeerContent?: (username: string, content: string) => void,
 ): CollabSocketResult {
   const ws = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimeout = useRef<number>();
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
+
+  // Store latest callbacks in refs so the socket handler always sees the current one
+  const onPeerContentRef = useRef(onPeerContent);
+  onPeerContentRef.current = onPeerContent;
+  const onRoomJoinedRef = useRef(onRoomJoined);
+  onRoomJoinedRef.current = onRoomJoined;
 
   // Destructure store actions
   const { setPeers, peerJoined, peerLeft, peerDiff } = useCollabStore();
@@ -40,20 +47,17 @@ export function useCollabSocket(
       try {
         const msg = JSON.parse(event.data);
         
-        // Forward directly into Zustand store
         switch (msg.type) {
           case 'room_joined':
             setPeers(msg.peers || []);
-            if (onRoomJoined && msg.roomId) {
-              onRoomJoined(msg.roomId);
+            if (onRoomJoinedRef.current && msg.roomId) {
+              onRoomJoinedRef.current(msg.roomId);
             }
             break;
           case 'peer_joined':
             if (msg.username) peerJoined({
               username: msg.username,
               avatarUrl: msg.avatarUrl || null,
-              currentContent: msg.currentContent ?? '',
-              seq: msg.seq ?? 0,
             });
             break;
           case 'peer_left':
@@ -64,9 +68,12 @@ export function useCollabSocket(
               peerDiff(msg.username, msg.patches, msg.seq ?? Date.now());
             }
             break;
+          case 'peer_content':
+            if (msg.username && msg.content !== undefined) {
+              onPeerContentRef.current?.(msg.username, msg.content);
+            }
+            break;
           case 'remote_push':
-            // Trigger a global custom event so IDE.tsx or others can show the banner.
-            // (Store could hold this, but a window event is clean for transient banners)
             window.dispatchEvent(new CustomEvent('collab:remote_push', { detail: msg }));
             break;
           case 'error':
@@ -92,11 +99,10 @@ export function useCollabSocket(
 
     socket.onerror = (err) => {
       console.error('Collab WebSocket error:', err);
-      // Let onclose handle the reconnect
     };
 
     ws.current = socket;
-  }, [enabled, onRoomJoined, setPeers, peerJoined, peerLeft, peerDiff]);
+  }, [enabled, setPeers, peerJoined, peerLeft, peerDiff]);
 
   useEffect(() => {
     connect();
