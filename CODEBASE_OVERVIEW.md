@@ -4,12 +4,12 @@ This document explains what the repository currently does end-to-end: how the ba
 
 ## 1) High-level architecture
 
-The repo is a two-part system:
+The repo is a simple two-part system:
 
-- `server/` (Node.js + Fastify): Handles GitHub OAuth using Passport, validates an organization code, stores users in PostgreSQL, issues/verifies JWTs, receives and validates GitHub webhooks, and manages real-time WebSocket connections for collaborative editing.
-- `client/` (React + Vite): Provides a login UI, triggers the OAuth flow, receives the issued JWT, stores it in `localStorage`, and routes the user to a dashboard. It also connects to the server via WebSockets for real-time peer collaboration and live file diffs.
+- `server/` (Node.js + Fastify): Handles GitHub OAuth using Passport, validates an organization code, stores users in PostgreSQL, and issues/verifies JWTs.
+- `client/` (React + Vite): Provides a login UI, triggers the OAuth flow, receives the issued JWT, stores it in `localStorage`, and routes the user to a placeholder “dashboard”.
 
-The collaborative editor implementation utilizes WebSockets for real-time peer awareness and GitHub periodic polling for remote state synchronization.
+There is no working “collaborative editor” implementation yet in the checked-in code; the editor-related pages/components exist as empty (0-byte) files.
 
 ## 2) Repository layout
 
@@ -23,9 +23,7 @@ The collaborative editor implementation utilizes WebSockets for real-time peer a
   - `src/services/token.service.ts`: DB helpers to get/set encrypted GitHub tokens — currently not used by any implemented route
   - `src/db/*`: PostgreSQL connection wrapper and startup org-code seeding
   - `src/db/migrations/001_init.sql`: SQL tables for `users` and `organizations`
-  - `src/routes/github.routes.ts`, `src/routes/repo.routes.ts`, `src/routes/admin.routes.ts`: Endpoints for fetching GitHub files, managing repositories, and admin operations.
-  - `src/routes/webhook.routes.ts`: Handles incoming GitHub webhooks (e.g., push events), validates HMAC-SHA256 signatures, and broadcasts real-time `remote_push` WebSocket alerts.
-  - `src/plugins/ws.plugin.ts` and `src/ws/*`: Routes and coordinates real-time WebSocket rooms, tracking connected peers and their cursor/file states based on Repo/Branch/File paths.
+  - `src/routes/github.routes.ts` and `src/routes/repo.routes.ts`: Empty (0-byte) in this repo state
 - `client/`
   - `src/main.tsx`: React entry + `BrowserRouter`
   - `src/App.tsx`: React Router routes (login, auth callback, invalid code, dashboard placeholder)
@@ -34,9 +32,8 @@ The collaborative editor implementation utilizes WebSockets for real-time peer a
   - `src/pages/InvalidCode.tsx`: Simple “wrong code” screen
   - `src/hooks/useAuth.ts`: Token storage, decoding helper, logout
   - `src/api/client.ts`: Axios instance intended to attach `Authorization: Bearer <token>` (currently inconsistent with `useAuth.ts`)
-  - `src/store/fileStore.ts`, `src/store/collabStore.ts`, `src/store/repoStore.ts`: Zustand stores for file tree, file content, repository state, and collaborative peer states.
-  - `src/hooks/*`: Custom hooks including `useCollabSocket.ts` and `useWebSocket.ts` to manage real-time WebSocket connections and event listeners.
-  - `src/pages/Dashboard.tsx`, `src/pages/IDE.tsx`: Pages for listing repositories, branches, and rendering the collaborative code editor dashboard.
+  - `src/store/fileStore.ts`: Zustand store for file contents (currently not used by any non-empty editor UI)
+  - `src/pages/Dashboard.tsx`, `src/pages/IDE.tsx`, and editor components in `src/components/*`: Empty (0-byte) in this repo state
 - `docker-compose.yml`: Local Postgres service for development
 - `README.md`: High-level planned structure; however, parts of that plan are not implemented in the current code state.
 
@@ -201,23 +198,11 @@ This file contains all implemented backend endpoints in the current repo state.
   - the Authorization header is missing/malformed
   - JWT verification fails/expired
 
-### 3.6 GitHub Webhooks (`src/routes/webhook.routes.ts`)
-
-- `POST /webhooks/github`: Receives events directly from GitHub (not JWT authenticated). Validates the payload using `HMAC-SHA256` against `GITHUB_WEBHOOK_SECRET`. Records the event into the database (`webhook_events`) and, for `push` events, analyzes modified files to broadcast real-time `remote_push` WebSocket notifications to relevant active rooms.
-- `GET /api/repos/:repoId/events`: A protected endpoint fetching paginated recent events for a given repository.
-
-### 3.7 Real-Time WebSockets (`src/ws/*`)
-
-- `ws.plugin.ts` registers a `fastify-websocket` endpoint (`/ws`).
-- Incoming connections are authenticated and tracked by user identity.
-- Clients send messages (e.g. `join_room` specifying `repoId:branch:filePath`), and the server joins them via `roomManager.joinRoom()`.
-- Supports broadcasting messages such as `peer_joined`, `peer_left`, `peer_diff`, and periodic `peer_content` to keep users working on the same file in sync.
-
-### 3.8 GitHub API + token services
+### 3.6 GitHub API + token services (currently unused)
 
 - `src/services/github.service.ts`
   - Wraps `@octokit/rest` to list user repos, list branches, and fetch a recursive Git tree and file contents.
-  - Used prominently across `github.routes.ts` to proxy read/write requests up to GitHub on behalf of the user or admin app installation.
+  - These functions are not wired to any implemented route in the current repo state (because `github.routes.ts` and `repo.routes.ts` are empty).
 
 - `src/services/token.service.ts`
   - `getGithubToken(userId)` reads encrypted token from DB and decrypts it.
@@ -301,7 +286,7 @@ So, as currently written:
 - Axios requests may attach `Authorization: Bearer null` (depending on how/if `jwt` is set elsewhere).
 - `VITE_API_URL` is not defined in the checked-in Vite config, so `baseURL` may be `undefined` unless provided via environment variables.
 
-This instance is widely used in API calls fetching repos, tracking hooks, and communicating with the backend.
+No non-empty code currently uses this Axios instance (because the editor/dashboard pages are empty).
 
 ### 4.6 Editor/file state (`src/store/fileStore.ts`)
 
@@ -315,7 +300,7 @@ This instance is widely used in API calls fetching repos, tracking hooks, and co
   - `setActivePath(path)` sets active file path
   - `setActiveBranch(branch)` clears open files and resets active path
 
-This store, alongside `collabStore.ts` and `repoStore.ts`, provides a cohesive reactive layer powering the dashboard and the live diff views in IDE components.
+In the current repo state, none of the editor UI components that would use this store contain implementation code (they are empty).
 
 ## 5) Docker / local development (`docker-compose.yml`)
 
@@ -355,13 +340,26 @@ Vite config is minimal (`server.port = 5173`) and does not define `VITE_API_URL`
 
 The current `Login.tsx` does not use `VITE_API_URL`; it hardcodes `http://localhost:3000` for server calls.
 
-## 7) Current Implementation Status
+## 7) Important “current state” mismatches / stubs
 
-A massive refactoring recently introduced robust collaboration, webhooks, and UI logic:
-- **Admin Portal**: Allows provisioning of access roles to users for connected GitHub Repositories via `admin.routes.ts`.
-- **Collaboration & Diffing**: The system establishes real-time peer visibility using WebSockets (`useCollabSocket.ts`). A direct GitHub-polling approach periodically synchronizes document content, discarding earlier complex patch-based systems.
-- **Webhooks**: GitHub push events are instantly pushed to clients via WebSockets, so peers are notified immediately when the upstream repository changes.
-- **Database Migrations**: Extended tables for `connected_repos`, `webhook_events`, `repo_access`, etc., are securely backing the new components.
+The repository contains several files referenced by `README.md` and/or implied by the planned architecture, but they are empty (0-byte) in the current checked-in state:
 
-The dashboard and editor components have been replaced by functional React components for repo browsing, tree fetching, and real-time collaborative editing.
+- Backend:
+  - `server/src/routes/github.routes.ts` is empty
+  - `server/src/routes/repo.routes.ts` is empty
+- Frontend:
+  - `client/src/pages/Dashboard.tsx` is empty (but `App.tsx` currently uses a simple placeholder element instead)
+  - `client/src/pages/IDE.tsx` is empty
+  - `client/src/components/FileTree.tsx` is empty
+  - `client/src/components/BranchSelector.tsx` is empty
+  - `client/src/components/Editor.tsx` is empty
+
+So the working part of the app right now is primarily:
+
+- org code verification (`POST /auth/verify-code`)
+- GitHub OAuth (`/auth/github` + `/auth/github/callback`)
+- JWT issuance + client storage
+- logout
+
+Everything related to repo browsing, branches, file tree, and Monaco editing is not implemented yet in this repo state, even though GitHub API and Zustand store scaffolding exist.
 
