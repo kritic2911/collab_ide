@@ -6,6 +6,9 @@ import { colors, cardStyle, inputStyle, buttonBase } from '../ui/styles';
 import { fetchBranches, fetchFileContent, fetchFileTree, fetchRepos } from '../api/admin';
 import { useRepoStore } from '../store/repoStore';
 import { useFileStore } from '../store/fileStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { usePresence } from '../hooks/usePresence';
+import PresenceAvatars from '../components/PresenceAvatars';
 
 type TreeNode = {
   name: string;
@@ -67,6 +70,10 @@ export default function RepoBrowser() {
   const { repos, selectedRepo, selectedBranch, fileTree, setRepos, selectRepo, selectBranch, setFileTree } =
     useRepoStore();
   const { openFiles, activePath, activeBranch, setFileContent, setActivePath, setActiveBranch } = useFileStore();
+
+  // ── WebSocket + Presence ──
+  useWebSocket();
+  usePresence(repoIdNum, selectedBranch, activePath);
 
   const [branches, setBranches] = useState<{ name: string }[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -279,7 +286,10 @@ export default function RepoBrowser() {
                 {activeBranch ? `Branch: ${activeBranch}` : ''}
               </div>
             </div>
-            <div style={{ color: colors.muted, fontSize: 12 }}>{loadingFile ? 'Loading…' : ''}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <PresenceAvatars />
+              <div style={{ color: colors.muted, fontSize: 12 }}>{loadingFile ? 'Loading…' : ''}</div>
+            </div>
           </div>
 
           <div style={{ height: '100%' }}>
