@@ -39,6 +39,17 @@ export type ClientMessage =
       roomId: string;
       patches: DiffPatch[]; // array — Monaco batches rapid changes
       seq: number;          // monotonic counter per client, for ordering
+    }
+  | {
+      type: 'request_peer_doc';
+      roomId: string;
+      targetUsername: string;
+    }
+  | {
+      type: 'doc_response';
+      roomId: string;
+      targetUsername: string;
+      content: string;
     };
 
 // ──────────────────────────────────────────────
@@ -78,4 +89,15 @@ export type ServerMessage =
       branch: string;
       changedFiles: string[];
       commitSha: string; // short SHA for the banner: "abc1234 pushed to main"
+    }
+  | {
+      type: 'doc_requested';
+      roomId: string;
+      requestedBy: string;
+    }
+  | {
+      type: 'peer_doc_content';
+      roomId: string;
+      username: string;
+      content: string;
     };

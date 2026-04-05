@@ -26,6 +26,8 @@ export type ServerMessage =
   | { type: 'peer_left'; roomId: string; username: string }
   | { type: 'peer_diff'; roomId: string; username: string; patches: any[]; seq: number }
   | { type: 'remote_push'; roomId: string; pushedBy: string; branch: string; changedFiles: string[]; commitSha: string }
+  | { type: 'doc_requested'; roomId: string; requestedBy: string }
+  | { type: 'peer_doc_content'; roomId: string; username: string; content: string }
   | { type: 'error'; message: string };
 
 type MessageHandler = (msg: ServerMessage) => void;

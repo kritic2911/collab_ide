@@ -6,6 +6,7 @@ import {
   broadcastToRoom,
   getRoomPeers,
   removeFromAllRooms,
+  getSocketByUsername,
 } from './roomManager.js';
 
 // ──────────────────────────────────────────────
@@ -32,6 +33,14 @@ export function handleMessage(conn: AuthenticatedSocket, raw: string): void {
 
     case 'diff_update':
       onDiffUpdate(conn, msg);
+      break;
+
+    case 'request_peer_doc':
+      onRequestPeerDoc(conn, msg);
+      break;
+
+    case 'doc_response':
+      onDocResponse(conn, msg);
       break;
 
     default:
@@ -117,4 +126,35 @@ function onDiffUpdate(
     seq: msg.seq,
   };
   broadcastToRoom(msg.roomId, peerDiff, conn);
+}
+
+function onRequestPeerDoc(
+  conn: AuthenticatedSocket,
+  msg: Extract<ClientMessage, { type: 'request_peer_doc' }>,
+): void {
+  const targetSocket = getSocketByUsername(msg.roomId, msg.targetUsername);
+  if (!targetSocket) return;
+
+  const docRequested: ServerMessage = {
+    type: 'doc_requested',
+    roomId: msg.roomId,
+    requestedBy: conn.user.username,
+  };
+  targetSocket.send(JSON.stringify(docRequested));
+}
+
+function onDocResponse(
+  conn: AuthenticatedSocket,
+  msg: Extract<ClientMessage, { type: 'doc_response' }>,
+): void {
+  const targetSocket = getSocketByUsername(msg.roomId, msg.targetUsername);
+  if (!targetSocket) return;
+
+  const peerDocContent: ServerMessage = {
+    type: 'peer_doc_content',
+    roomId: msg.roomId,
+    username: conn.user.username,
+    content: msg.content,
+  };
+  targetSocket.send(JSON.stringify(peerDocContent));
 }

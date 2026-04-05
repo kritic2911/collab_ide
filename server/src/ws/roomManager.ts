@@ -95,3 +95,15 @@ export function removeFromAllRooms(conn: AuthenticatedSocket): string[] {
 
   return affectedRooms;
 }
+
+// ──────────────────────────────────────────────
+// getSocketByUsername — find a specific peer's socket in a room
+// ──────────────────────────────────────────────
+export function getSocketByUsername(roomId: string, username: string): AuthenticatedSocket | null {
+  const room = rooms.get(roomId);
+  if (!room) return null;
+  for (const conn of room) {
+    if (conn.user.username === username) return conn;
+  }
+  return null;
+}

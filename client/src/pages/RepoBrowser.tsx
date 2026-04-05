@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import Shell from '../ui/Shell';
@@ -6,8 +6,9 @@ import { colors, cardStyle, inputStyle, buttonBase } from '../ui/styles';
 import { fetchBranches, fetchFileContent, fetchFileTree, fetchRepos } from '../api/admin';
 import { useRepoStore } from '../store/repoStore';
 import { useFileStore } from '../store/fileStore';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { usePresence } from '../hooks/usePresence';
+import { useWebSocket, onServerMessage } from '../hooks/useWebSocket';
+import { usePresence, usePresenceStore } from '../hooks/usePresence';
+import { getUser } from '../hooks/useAuth';
 import PresenceAvatars from '../components/PresenceAvatars';
 
 type TreeNode = {
@@ -29,10 +30,8 @@ function buildTree(items: { path: string; type: string }[]): TreeNode[] {
       cursor[part] ||= { __path: acc, __children: {} };
       cursor = cursor[part].__children;
     }
-    // mark leaf type on last part
     const last = parts[parts.length - 1];
     if (last) root; // no-op to keep ts happy
-    // We'll map type when materializing (blob if not having children)
   }
 
   const materialize = (obj: any, basePath = ''): TreeNode[] => {
@@ -51,7 +50,6 @@ function buildTree(items: { path: string; type: string }[]): TreeNode[] {
     });
   };
 
-  // Prefer folders first
   const tree = materialize(root);
   const sortFoldersFirst = (nodes: TreeNode[]): TreeNode[] =>
     nodes
@@ -66,14 +64,16 @@ export default function RepoBrowser() {
   const { repoId } = useParams();
   const navigate = useNavigate();
   const repoIdNum = Number(repoId);
+  const user = getUser();
 
   const { repos, selectedRepo, selectedBranch, fileTree, setRepos, selectRepo, selectBranch, setFileTree } =
     useRepoStore();
   const { openFiles, activePath, activeBranch, setFileContent, setActivePath, setActiveBranch } = useFileStore();
 
   // ── WebSocket + Presence ──
-  useWebSocket();
+  const { send } = useWebSocket();
   usePresence(repoIdNum, selectedBranch, activePath);
+  const currentRoomId = usePresenceStore((s) => s.currentRoomId);
 
   const [branches, setBranches] = useState<{ name: string }[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -82,20 +82,27 @@ export default function RepoBrowser() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
-  // Load repos (needed to render header + validate repoId)
+  // ── Peer viewing state ──
+  const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
+  const [peerContent, setPeerContent] = useState<string>('');
+  const [peerDocReady, setPeerDocReady] = useState(false);
+
+  // ── Editor refs ──
+  const editorRef = useRef<any>(null);
+  const peerEditorRef = useRef<any>(null);
+  const peerMonacoRef = useRef<any>(null);
+  const seqRef = useRef(0);
+  const pendingPeerDiffsRef = useRef<any[]>([]);
+
+  // Load repos
   useEffect(() => {
     let cancelled = false;
     if (repos.length) return;
     fetchRepos()
-      .then((data) => {
-        if (cancelled) return;
-        setRepos(data);
-      })
+      .then((data) => { if (!cancelled) setRepos(data); })
       .catch(() => {})
       .finally(() => {});
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [repos.length, setRepos]);
 
   // Select current repo
@@ -105,7 +112,7 @@ export default function RepoBrowser() {
     if (repo) selectRepo(repo);
   }, [repoIdNum, repos, selectRepo]);
 
-  // Load branches when repo selected
+  // Load branches
   useEffect(() => {
     if (!selectedRepo) return;
     let cancelled = false;
@@ -115,51 +122,82 @@ export default function RepoBrowser() {
       .then((data) => {
         if (cancelled) return;
         setBranches(data);
-        const defaultBranch = selectedRepo.default_branch;
-        const first = data?.[0]?.name;
-        const nextBranch = defaultBranch || first || null;
+        const nextBranch = selectedRepo.default_branch || data?.[0]?.name || null;
         if (nextBranch) {
           selectBranch(nextBranch);
           setActiveBranch(nextBranch);
         }
       })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e?.response?.data?.error ?? e?.message ?? 'Failed to load branches');
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoadingBranches(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .catch((e) => { if (!cancelled) setError(e?.response?.data?.error ?? e?.message ?? 'Failed to load branches'); })
+      .finally(() => { if (!cancelled) setLoadingBranches(false); });
+    return () => { cancelled = true; };
   }, [selectedRepo, selectBranch, setActiveBranch]);
 
-  // Load file tree when branch selected
+  // Load file tree
   useEffect(() => {
     if (!selectedRepo || !selectedBranch) return;
     let cancelled = false;
     setLoadingTree(true);
     setError(null);
     fetchFileTree(selectedRepo.id, selectedBranch)
-      .then((data) => {
-        if (cancelled) return;
-        setFileTree(data);
-        setExpanded(new Set());
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e?.response?.data?.error ?? e?.message ?? 'Failed to load file tree');
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setLoadingTree(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((data) => { if (!cancelled) { setFileTree(data); setExpanded(new Set()); } })
+      .catch((e) => { if (!cancelled) setError(e?.response?.data?.error ?? e?.message ?? 'Failed to load file tree'); })
+      .finally(() => { if (!cancelled) setLoadingTree(false); });
+    return () => { cancelled = true; };
   }, [selectedRepo, selectedBranch, setFileTree]);
+
+  // ── Close peer pane when switching files ──
+  useEffect(() => {
+    setSelectedPeer(null);
+    setPeerContent('');
+    setPeerDocReady(false);
+    pendingPeerDiffsRef.current = [];
+  }, [activePath]);
+
+  // ── Handle server messages for peer document ──
+  useEffect(() => {
+    const unsub = onServerMessage((msg) => {
+      // Auto-respond to doc_requested: another peer wants our document
+      if (msg.type === 'doc_requested' && currentRoomId) {
+        const myContent = editorRef.current?.getValue() ?? '';
+        send({
+          type: 'doc_response',
+          roomId: msg.roomId,
+          targetUsername: msg.requestedBy,
+          content: myContent,
+        });
+      }
+
+      // Received a peer's full document
+      if (msg.type === 'peer_doc_content') {
+        setPeerContent(msg.content);
+        setPeerDocReady(true);
+        // Apply any queued diffs
+        const queued = pendingPeerDiffsRef.current;
+        pendingPeerDiffsRef.current = [];
+        if (queued.length > 0 && peerEditorRef.current && peerMonacoRef.current) {
+          applyDiffsToPeerEditor(queued, peerEditorRef.current, peerMonacoRef.current);
+        }
+      }
+
+      // Incoming peer diff — apply to peer pane if it's from the selected peer
+      if (msg.type === 'peer_diff' && msg.username === selectedPeer) {
+        if (!peerDocReady) {
+          pendingPeerDiffsRef.current.push(...msg.patches);
+        } else if (peerEditorRef.current && peerMonacoRef.current) {
+          applyDiffsToPeerEditor(msg.patches, peerEditorRef.current, peerMonacoRef.current);
+        }
+      }
+
+      // If the selected peer left, close the pane
+      if (msg.type === 'peer_left' && msg.username === selectedPeer) {
+        setSelectedPeer(null);
+        setPeerContent('');
+        setPeerDocReady(false);
+      }
+    });
+    return unsub;
+  }, [currentRoomId, selectedPeer, peerDocReady, send]);
 
   const tree = useMemo(() => (fileTree ? buildTree(fileTree) : []), [fileTree]);
   const content = activePath ? openFiles.get(activePath) ?? '' : '';
@@ -179,6 +217,62 @@ export default function RepoBrowser() {
     }
   };
 
+  // ── Editor onChange → send diff_update ──
+  const handleEditorChange = useCallback((_value: string | undefined, ev: any) => {
+    if (!activePath || !ev?.changes || !currentRoomId) return;
+    // Also keep store in sync
+    if (_value !== undefined) setFileContent(activePath, _value);
+
+    const patches = ev.changes.map((c: any) => ({
+      range: {
+        startLineNumber: c.range.startLineNumber,
+        startColumn: c.range.startColumn,
+        endLineNumber: c.range.endLineNumber,
+        endColumn: c.range.endColumn,
+      },
+      text: c.text,
+      rangeLength: c.rangeLength,
+    }));
+
+    seqRef.current += 1;
+    send({
+      type: 'diff_update',
+      roomId: currentRoomId,
+      patches,
+      seq: seqRef.current,
+    });
+  }, [activePath, currentRoomId, send, setFileContent]);
+
+  // ── Select a peer to view ──
+  const handleSelectPeer = useCallback((username: string) => {
+    if (username === selectedPeer) {
+      // Toggle off
+      setSelectedPeer(null);
+      setPeerContent('');
+      setPeerDocReady(false);
+      return;
+    }
+    setSelectedPeer(username);
+    setPeerContent('');
+    setPeerDocReady(false);
+    pendingPeerDiffsRef.current = [];
+    // Request their document
+    if (currentRoomId) {
+      send({
+        type: 'request_peer_doc',
+        roomId: currentRoomId,
+        targetUsername: username,
+      });
+    }
+  }, [selectedPeer, currentRoomId, send]);
+
+  const closePeerPane = useCallback(() => {
+    setSelectedPeer(null);
+    setPeerContent('');
+    setPeerDocReady(false);
+  }, []);
+
+  // ── Early returns ──
   if (!Number.isFinite(repoIdNum)) {
     return (
       <Shell title="Browse">
@@ -191,7 +285,7 @@ export default function RepoBrowser() {
     return (
       <Shell title="Browse">
         <div style={cardStyle}>
-          Repo not found (or you don’t have access).{' '}
+          Repo not found (or you don't have access).{' '}
           <button style={{ ...buttonBase, marginLeft: 8 }} onClick={() => navigate('/dashboard')}>
             Back to dashboard
           </button>
@@ -218,7 +312,8 @@ export default function RepoBrowser() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 12, alignItems: 'stretch' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 12, alignItems: 'stretch' }}>
+        {/* ── File tree sidebar ── */}
         <div style={{ ...cardStyle, padding: 12, height: 'calc(100vh - 140px)', overflow: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div style={{ fontWeight: 800 }}>Files</div>
@@ -238,9 +333,7 @@ export default function RepoBrowser() {
               style={{ ...inputStyle, marginTop: 6 }}
             >
               {branches.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
+                <option key={b.name} value={b.name}>{b.name}</option>
               ))}
             </select>
           </div>
@@ -267,7 +360,18 @@ export default function RepoBrowser() {
           </div>
         </div>
 
-        <div style={{ ...cardStyle, padding: 0, height: 'calc(100vh - 140px)', overflow: 'hidden' }}>
+        {/* ── Editor area ── */}
+        <div
+          style={{
+            ...cardStyle,
+            padding: 0,
+            height: 'calc(100vh - 140px)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Header bar */}
           <div
             style={{
               padding: '10px 12px',
@@ -276,6 +380,7 @@ export default function RepoBrowser() {
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 12,
+              flexShrink: 0,
             }}
           >
             <div style={{ minWidth: 0 }}>
@@ -287,24 +392,143 @@ export default function RepoBrowser() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <PresenceAvatars />
+              <PresenceAvatars
+                currentUsername={user?.username ?? ''}
+                selectedPeer={selectedPeer}
+                onSelectPeer={handleSelectPeer}
+              />
               <div style={{ color: colors.muted, fontSize: 12 }}>{loadingFile ? 'Loading…' : ''}</div>
             </div>
           </div>
 
-          <div style={{ height: '100%' }}>
-            <Editor
-              height="100%"
-              theme="vs-dark"
-              language={guessLanguage(activePath ?? '')}
-              value={content}
-              options={{
-                readOnly: true,
-                minimap: { enabled: false },
-                fontSize: 13,
-                wordWrap: 'on',
-              }}
-            />
+          {/* Editor panes */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            {/* Main editor — editable */}
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              <Editor
+                height="100%"
+                theme="vs-dark"
+                language={guessLanguage(activePath ?? '')}
+                value={content}
+                onChange={handleEditorChange}
+                onMount={(editor) => { editorRef.current = editor; }}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  wordWrap: 'on',
+                }}
+              />
+            </div>
+
+            {/* Peer editor — read-only, closeable */}
+            {selectedPeer && (
+              <div
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderLeft: `1px solid ${colors.border}`,
+                  overflow: 'hidden',
+                }}
+              >
+                {/* Peer pane header */}
+                <div
+                  style={{
+                    padding: '6px 12px',
+                    borderBottom: `1px solid ${colors.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    background: 'rgba(88,166,255,0.06)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: colors.muted }}>👁</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: colors.brandA }}>
+                      {selectedPeer}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: colors.muted,
+                        background: 'rgba(255,255,255,0.06)',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                      }}
+                    >
+                      read-only
+                    </span>
+                  </div>
+                  <button
+                    onClick={closePeerPane}
+                    title="Close peer view"
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 6,
+                      border: 'none',
+                      background: 'transparent',
+                      color: colors.muted,
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = 'rgba(248,81,73,0.2)';
+                      (e.currentTarget as HTMLElement).style.color = colors.danger;
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = 'transparent';
+                      (e.currentTarget as HTMLElement).style.color = colors.muted;
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Peer editor content */}
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  {!peerDocReady ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '100%',
+                        color: colors.muted,
+                        fontSize: 13,
+                      }}
+                    >
+                      Loading {selectedPeer}'s code…
+                    </div>
+                  ) : (
+                    <Editor
+                      key={selectedPeer}
+                      height="100%"
+                      theme="vs-dark"
+                      language={guessLanguage(activePath ?? '')}
+                      value={peerContent}
+                      onMount={(editor, monaco) => {
+                        peerEditorRef.current = editor;
+                        peerMonacoRef.current = monaco;
+                      }}
+                      options={{
+                        readOnly: true,
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        wordWrap: 'on',
+                        domReadOnly: true,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -312,6 +536,25 @@ export default function RepoBrowser() {
   );
 }
 
+// ── Apply DiffPatch[] to the peer Monaco editor ──
+function applyDiffsToPeerEditor(patches: any[], editor: any, monaco: any) {
+  try {
+    const edits = patches.map((p: any) => ({
+      range: new monaco.Range(
+        p.range.startLineNumber,
+        p.range.startColumn,
+        p.range.endLineNumber,
+        p.range.endColumn,
+      ),
+      text: p.text,
+    }));
+    editor.executeEdits('peer-sync', edits);
+  } catch {
+    // Ignore edit errors (e.g. stale ranges)
+  }
+}
+
+// ── TreeView component ──
 function TreeView({
   nodes,
   expanded,
@@ -389,4 +632,3 @@ function guessLanguage(path: string): string {
   if (lower.endsWith('.html')) return 'html';
   return 'plaintext';
 }
-
