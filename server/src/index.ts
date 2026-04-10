@@ -1,4 +1,9 @@
+// Side-effect import — MUST be the first import.
+// ES module `import` statements are hoisted and evaluated in order,
+// so this guarantees process.env is populated before any other module
+// (like github.strategy.ts or crypto.ts) reads env vars.
 import 'dotenv/config';
+
 import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import sessionPlugin from './plugins/session.plugin.js';
