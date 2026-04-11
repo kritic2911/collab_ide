@@ -24,3 +24,18 @@ Thumbs.db
 
 # Vite
 client/.vite/
+
+# Security and Credentials
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+*secret*
+*password*
+
+# Editor backups
+*.swp
+*.swo

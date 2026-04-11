@@ -12,15 +12,18 @@ import { authRoutes } from './routes/auth.routes.js';
 import { repoRoutes } from './routes/repo.routes.js';
 import { githubRoutes } from './routes/github.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
+import { webhookRoutes } from './routes/webhook.routes.js';
 import wsPlugin from './plugins/wsPlugin.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
 import { seedRoles } from './db/seedRoles.js';
+import { connectRedis, disconnectRedis } from './state/redis.client.js';
 
 // ──────────────────────────────────────────────
 // Env validation — crash immediately if anything missing
 // ──────────────────────────────────────────────
 const required = [
   'DATABASE_URL',
+  'REDIS_URL',
   'GITHUB_CLIENT_ID',
   'GITHUB_CLIENT_SECRET',
   'JWT_SECRET',
@@ -63,6 +66,7 @@ await app.register(authRoutes);
 await app.register(repoRoutes);
 await app.register(githubRoutes);
 await app.register(adminRoutes);
+await app.register(webhookRoutes);
 
 // Seed / update organization code hash in the database
 await seedOrgCode();
@@ -70,9 +74,17 @@ await seedOrgCode();
 // Seed predefined roles
 await seedRoles();
 
+// Connect Redis (commands + PubSub clients)
+await connectRedis();
+
 // Health check
 app.get('/health', async () => {
   return { status: 'ok' };
+});
+
+// Graceful shutdown — close Redis connections
+app.addHook('onClose', async () => {
+  await disconnectRedis();
 });
 
 // ──────────────────────────────────────────────

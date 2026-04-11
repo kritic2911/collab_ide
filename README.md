@@ -139,4 +139,16 @@ Create `client/.env` from `client/.env.example` and keep:
 
 - `VITE_API_URL=http://localhost:3000`
 
+## Pipeline Modifications & State Layer
 
+### New Modules
+This integration refactors the state layer entirely via `server/src/state/`:
+- `cacheManager.ts`: Master orchestration for L1 -> L2 -> L3 base content retrieval.
+- `diffStore.ts`: Redis JSON array patch manager providing temporary rolling diff snapshots per user.
+- `lru.ts`: High-performance manual LRU implementation serving as L1.
+- `presenceStore.ts`: Redis sets manager tracking room participants idempodently.
+- `pubsub.ts`: Multi-node redis subscription manager for realtime cross-process event relaying.
+- `redis.client.ts`: Provides connection lifecycles for both master mapping and PubSub mechanisms.
+
+### New Environment Variables
+- `REDIS_URL` (Optional): The connection string URL for the Redis server. Defaults to `redis://localhost:6379`.

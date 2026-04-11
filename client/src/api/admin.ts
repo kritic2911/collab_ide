@@ -101,9 +101,9 @@ export interface BranchSnapshot {
 export const fetchRepos = () =>
   api.get<ConnectedRepo[]>('/api/repos').then(r => r.data);
 
-/** Returns branch names as plain strings (server returns string[]) */
+/** Returns branch names converted to objects for the UI */
 export const fetchBranches = (repoId: number) =>
-  api.get<string[]>(`/api/repos/${repoId}/branches`).then(r => r.data);
+  api.get<string[]>(`/api/repos/${repoId}/branches`).then(r => r.data.map(name => ({ name })));
 
 /**
  * Fetch (or retrieve from server cache) the committed file tree for a branch.

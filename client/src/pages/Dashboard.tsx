@@ -95,17 +95,30 @@ function RepoCard({ repo }: { repo: ConnectedRepo }) {
             Default branch: <span style={{ color: colors.text }}>{repo.default_branch}</span>
           </div>
         </div>
-        <Link
-          to={`/browse/${repo.id}`}
-          style={{
-            ...buttonBase,
-            textDecoration: 'none',
-            fontSize: 13,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Browse
-        </Link>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <Link
+            to={`/browse/${repo.id}`}
+            style={{
+              ...buttonBase,
+              textDecoration: 'none',
+              fontSize: 13,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Browse
+          </Link>
+          <Link
+            to={`/ide/${repo.id}`}
+            style={{
+              ...buttonBase,
+              textDecoration: 'none',
+              fontSize: 13,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            IDE
+          </Link>
+        </div>
       </div>
     </div>
   );
