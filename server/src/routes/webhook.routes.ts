@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import crypto from 'node:crypto';
 import { db } from '../db/client.js';
 import { requireAuth } from '../middleware/requireAuth.js';
-import { broadcastRemotePush } from '../plugins/ws.plugin.js';
+import { broadcastToRoom, getRoomId } from '../ws/roomManager.js';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -132,22 +132,15 @@ export const webhookRoutes: FastifyPluginAsync = async (app) => {
       }
       const changedFiles = Array.from(changedFilesSet);
 
-      // TODO: import { broadcastToRoom, getRoomId } from '../ws/roomManager.js';
-      // For now we use the ones exported from ws.plugin.js if available, or just log.
-      // (Assuming getRoomId is manually duplicated or imported properly)
-      
-      const { broadcastToRoom } = await import('../plugins/ws.plugin.js');
-      // Simple re-implementation of getRoomId to avoid modifying ws.plugin.ts unnecessarily
-      const getRoomIdLocal = (rId: string, b: string, f: string) => `${rId}:${b}:${f.replace(/^[\\\\/]+/, '').replace(/\\\\/g, '/')}`;
       for (const file of changedFiles) {
-        const roomId = getRoomIdLocal(String(repoId), branch, file);
+        const roomId = getRoomId(String(repoId), branch, file);
         broadcastToRoom(roomId, {
           type: 'remote_push',
           roomId,
           pushedBy: senderUsername,
           branch,
           changedFiles,
-          commitSha
+          commitSha,
         });
       }
     }

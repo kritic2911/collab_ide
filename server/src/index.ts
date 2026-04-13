@@ -8,7 +8,7 @@ import { repoRoutes } from './routes/repo.routes.js';
 import { githubRoutes } from './routes/github.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
 import { webhookRoutes } from './routes/webhook.routes.js';
-import { wsPlugin } from './plugins/ws.plugin.js';
+import wsPlugin from './plugins/wsPlugin.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
 import { seedRoles } from './db/seedRoles.js';
 
