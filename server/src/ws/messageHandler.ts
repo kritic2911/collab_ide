@@ -11,6 +11,7 @@ import * as diffStore from '../state/diffStore.js';
 import * as baseCache from '../state/baseCache.js';
 import * as pubsub from '../state/pubsub.js';
 import type { PubSubMessage } from '../state/pubsub.js';
+import * as chatService from '../services/chatService.js';
 
 // ──────────────────────────────────────────────
 // handleMessage — route incoming JSON by `type`
@@ -39,6 +40,18 @@ export function handleMessage(
 
     case 'diff_update':
       onDiffUpdate(conn, msg);
+      break;
+
+    case 'chat_message':
+      onChatMessage(conn, msg);
+      break;
+
+    case 'chat_load_older':
+      onChatLoadOlder(conn, msg);
+      break;
+
+    case 'chat_delete':
+      onChatDelete(conn, msg);
       break;
 
     default:
@@ -143,7 +156,16 @@ async function onJoinRoom(
   };
   conn.send(JSON.stringify(hydrate));
 
-  // 8. Broadcast peer_joined via PubSub to all other subscribers
+  // 8. Send chat history (last 7 days, max 50)
+  const chatHistory = await chatService.getHistory(roomId, 50);
+  const historyMsg: ServerMessage = {
+    type: 'chat_history',
+    roomId,
+    messages: chatHistory,
+  };
+  conn.send(JSON.stringify(historyMsg));
+
+  // 9. Broadcast peer_joined via PubSub to all other subscribers
   const joinedMsg: PubSubMessage = {
     event: 'peer_joined',
     roomId,
@@ -213,4 +235,94 @@ async function onDiffUpdate(
     timestamp: Date.now(),
   };
   await pubsub.publish(msg.roomId, diffMsg);
+}
+
+// ──────────────────────────────────────────────
+// chat_message — validate, persist (encrypted), relay via PubSub
+// ──────────────────────────────────────────────
+async function onChatMessage(
+  conn: AuthenticatedSocket,
+  msg: Extract<ClientMessage, { type: 'chat_message' }>
+): Promise<void> {
+  // 1. Validate text
+  const text = (msg.text || '').trim();
+  if (!text || text.length > 2000) {
+    conn.send(
+      JSON.stringify({ type: 'error', message: 'Message must be 1-2000 characters' })
+    );
+    return;
+  }
+
+  // 2. Persist (encrypt + INSERT)
+  const entry = await chatService.saveMessage(
+    msg.roomId,
+    conn.user.userId,
+    conn.user.username,
+    conn.user.avatarUrl || null,
+    text
+  );
+
+  // 3. Fan out via PubSub (plaintext — never persisted in Redis)
+  const chatMsg: PubSubMessage = {
+    event: 'chat_message',
+    roomId: msg.roomId,
+    userId: conn.user.userId,
+    payload: {
+      messageId: entry.id,
+      username: entry.username,
+      avatarUrl: entry.avatarUrl,
+      text: entry.text,
+      timestamp: entry.timestamp,
+    },
+    timestamp: Date.now(),
+  };
+  await pubsub.publish(msg.roomId, chatMsg);
+}
+
+// ──────────────────────────────────────────────
+// chat_load_older — cursor-based pagination (up to 30 days)
+// ──────────────────────────────────────────────
+async function onChatLoadOlder(
+  conn: AuthenticatedSocket,
+  msg: Extract<ClientMessage, { type: 'chat_load_older' }>
+): Promise<void> {
+  const PAGE_SIZE = 30;
+  const older = await chatService.getOlderMessages(msg.roomId, msg.beforeId, PAGE_SIZE);
+
+  const olderMsg: ServerMessage = {
+    type: 'chat_older_history',
+    roomId: msg.roomId,
+    messages: older,
+    hasMore: older.length === PAGE_SIZE,
+  };
+  conn.send(JSON.stringify(olderMsg));
+}
+
+// ──────────────────────────────────────────────
+// chat_delete — delete own message, broadcast removal
+// ──────────────────────────────────────────────
+async function onChatDelete(
+  conn: AuthenticatedSocket,
+  msg: Extract<ClientMessage, { type: 'chat_delete' }>
+): Promise<void> {
+  const deleted = await chatService.deleteMessage(msg.messageId, conn.user.userId);
+
+  if (!deleted) {
+    conn.send(
+      JSON.stringify({ type: 'error', message: 'Message not found or not owned by you' })
+    );
+    return;
+  }
+
+  // Broadcast deletion to all peers via PubSub
+  const deleteMsg: PubSubMessage = {
+    event: 'chat_deleted',
+    roomId: msg.roomId,
+    userId: conn.user.userId,
+    payload: {
+      messageId: msg.messageId,
+    },
+    timestamp: Date.now(),
+  };
+  await pubsub.publish(msg.roomId, deleteMsg);
 }

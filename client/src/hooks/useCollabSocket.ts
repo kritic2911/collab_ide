@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useCollabStore } from '../store/collabStore';
+import { useChatStore } from '../store/chatStore';
 import { getToken } from './useAuth';
 import { getWsBaseUrl } from '../lib/wsUrl';
 
@@ -92,6 +93,25 @@ export function useCollabSocket(
             break;
           case 'error':
             console.error('Collab socket error from server:', msg.message);
+            break;
+          case 'chat_history':
+            useChatStore.getState().setHistory(msg.messages || []);
+            break;
+          case 'chat_broadcast':
+            useChatStore.getState().addMessage({
+              id: msg.messageId,
+              userId: msg.userId,
+              username: msg.username,
+              avatarUrl: msg.avatarUrl,
+              text: msg.text,
+              timestamp: msg.timestamp,
+            });
+            break;
+          case 'chat_older_history':
+            useChatStore.getState().prependMessages(msg.messages || [], msg.hasMore ?? false);
+            break;
+          case 'chat_deleted':
+            useChatStore.getState().removeMessage(msg.messageId);
             break;
         }
       } catch (e) {

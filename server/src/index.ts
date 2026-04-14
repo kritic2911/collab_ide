@@ -77,13 +77,31 @@ await seedRoles();
 // Connect Redis (commands + PubSub clients)
 await connectRedis();
 
+// ──────────────────────────────────────────────
+// Chat cleanup — delete messages older than 30 days (runs every 24h)
+// ──────────────────────────────────────────────
+import { db } from './db/client.js';
+
+const CHAT_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const chatCleanupTimer = setInterval(async () => {
+  try {
+    const result = await db.query(
+      `DELETE FROM chat_messages WHERE created_at < NOW() - INTERVAL '30 days'`
+    );
+    console.log(`🧹 Chat cleanup: removed ${result.rowCount} messages older than 30 days`);
+  } catch (err) {
+    console.error('Chat cleanup failed:', err);
+  }
+}, CHAT_CLEANUP_INTERVAL);
+
 // Health check
 app.get('/health', async () => {
   return { status: 'ok' };
 });
 
-// Graceful shutdown — close Redis connections
+// Graceful shutdown — close Redis connections + clear cleanup timer
 app.addHook('onClose', async () => {
+  clearInterval(chatCleanupTimer);
   await disconnectRedis();
 });
 
