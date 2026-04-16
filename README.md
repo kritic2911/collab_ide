@@ -140,10 +140,16 @@ Create `client/.env` from `client/.env.example` and keep:
 
 - `VITE_API_URL=http://localhost:3000`
 
-### Webhooks & Local Development
+## Pipeline Modifications & State Layer
 
-For GitHub webhooks to reach your local environment, GitHub cannot reach `localhost` directly.
-1. Install and run `ngrok http 3001` to create a public tunnel.
-2. Set `WEBHOOK_TARGET_URL=https://<your-ngrok-id>.ngrok-free.app/webhooks/github` in `server/.env`.
-3. Set `GITHUB_WEBHOOK_SECRET=your-secure-secret` in `server/.env`.
-4. When adding a repository via the backend API, it will automatically register this webhook URL using these environment variables. Teammates must do this or the webhooks won't fire locally.
+### New Modules
+This integration refactors the state layer entirely via `server/src/state/`:
+- `cacheManager.ts`: Master orchestration for L1 -> L2 -> L3 base content retrieval.
+- `diffStore.ts`: Redis JSON array patch manager providing temporary rolling diff snapshots per user.
+- `lru.ts`: High-performance manual LRU implementation serving as L1.
+- `presenceStore.ts`: Redis sets manager tracking room participants idempodently.
+- `pubsub.ts`: Multi-node redis subscription manager for realtime cross-process event relaying.
+- `redis.client.ts`: Provides connection lifecycles for both master mapping and PubSub mechanisms.
+
+### New Environment Variables
+- `REDIS_URL` (Optional): The connection string URL for the Redis server. Defaults to `redis://localhost:6379`.

@@ -1,4 +1,9 @@
+// Side-effect import — MUST be the first import.
+// ES module `import` statements are hoisted and evaluated in order,
+// so this guarantees process.env is populated before any other module
+// (like github.strategy.ts or crypto.ts) reads env vars.
 import 'dotenv/config';
+
 import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import sessionPlugin from './plugins/session.plugin.js';
@@ -11,12 +16,14 @@ import { webhookRoutes } from './routes/webhook.routes.js';
 import wsPlugin from './plugins/wsPlugin.js';
 import { seedOrgCode } from './db/seedOrgCode.js';
 import { seedRoles } from './db/seedRoles.js';
+import { connectRedis, disconnectRedis } from './state/redis.client.js';
 
 // ──────────────────────────────────────────────
 // Env validation — crash immediately if anything missing
 // ──────────────────────────────────────────────
 const required = [
   'DATABASE_URL',
+  'REDIS_URL',
   'GITHUB_CLIENT_ID',
   'GITHUB_CLIENT_SECRET',
   'JWT_SECRET',
@@ -62,9 +69,49 @@ await seedOrgCode();
 // Seed predefined roles
 await seedRoles();
 
+// Connect Redis (commands + PubSub clients)
+await connectRedis();
+
+import { subscribeToGlobalWebhooks } from './state/pubsub.js';
+import { broadcastToBranch } from './ws/roomManager.js';
+import { webhookLog } from './utils/fileLogger.js';
+
+// Setup Global Webhook Subscriber
+await subscribeToGlobalWebhooks((payload) => {
+  if (payload && payload.repoId && payload.branch && payload.msg) {
+    const sentCount = broadcastToBranch(payload.repoId, payload.branch, payload.msg);
+    if (sentCount > 0) {
+      webhookLog(`  [Instance] Delivered global push for repo ${payload.repoId} branch ${payload.branch} to ${sentCount} local socket(s)`);
+    }
+  }
+});
+
+// ──────────────────────────────────────────────
+// Chat cleanup — delete messages older than 30 days (runs every 24h)
+// ──────────────────────────────────────────────
+import { db } from './db/client.js';
+
+const CHAT_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const chatCleanupTimer = setInterval(async () => {
+  try {
+    const result = await db.query(
+      `DELETE FROM chat_messages WHERE created_at < NOW() - INTERVAL '30 days'`
+    );
+    console.log(`🧹 Chat cleanup: removed ${result.rowCount} messages older than 30 days`);
+  } catch (err) {
+    console.error('Chat cleanup failed:', err);
+  }
+}, CHAT_CLEANUP_INTERVAL);
+
 // Health check
 app.get('/health', async () => {
   return { status: 'ok' };
+});
+
+// Graceful shutdown — close Redis connections + clear cleanup timer
+app.addHook('onClose', async () => {
+  clearInterval(chatCleanupTimer);
+  await disconnectRedis();
 });
 
 // ──────────────────────────────────────────────

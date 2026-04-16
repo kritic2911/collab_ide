@@ -3,6 +3,13 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { getGithubToken } from '../services/token.service.js';
 import { getBranches, getFileTree, getFileContent } from '../services/github.service.js';
 import { db } from '../db/client.js';
+import {
+  setSnapshot,
+  getCachedTree,
+  getCachedFile,
+  setCachedFile,
+  getCacheInfo,
+} from '../cache/branchCache.js';
 
 /**
  * Helper: get admin's GitHub token.
@@ -104,15 +111,22 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /**
-   * GET /api/repos/:id/tree?branch=X — file tree for a connected repo.
+   * GET /api/repos/:id/snapshot?branch=X
+   *
+   * Fetch (or return from cache) the committed file tree for a branch.
+   * This seeds the server-side branch cache, establishing the "branch base"
+   * that the collaborative editor can diff user edits against.
+   *
+   * Response:
+   *   { cached: boolean, ageMs?: number, fileCount?: number, tree: TreeItem[] }
    */
   app.get<{ Params: { id: string }; Querystring: { branch: string } }>(
-    '/api/repos/:id/tree',
+    '/api/repos/:id/snapshot',
     { preHandler: [requireAuth] },
     async (req, reply) => {
       const user = (req as any).user;
       const repoId = Number(req.params.id);
-      const branch = (req.query as any).branch;
+      const branch = (req.query as any).branch as string;
 
       if (!branch) {
         return reply.status(400).send({ error: 'branch query param required' });
@@ -130,14 +144,80 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(404).send({ error: 'Repo not found' });
       }
 
+      // Check the in-memory cache first — return immediately if still fresh
+      const existing = getCachedTree(repoId, branch);
+      if (existing) {
+        const info = getCacheInfo(repoId, branch);
+        return {
+          ...(info.cached ? { cached: true, ageMs: info.ageMs, fileCount: info.fileCount } : { cached: false }),
+          tree: existing,
+        };
+      }
+
+      // Cache miss — fetch from GitHub and seed the snapshot
+      const token = await getAdminGithubToken();
+      const tree = await getFileTree(
+        token,
+        repo.rows[0].owner,
+        repo.rows[0].name,
+        branch
+      );
+
+      // Seed the cache with the fresh tree (file contents populate lazily)
+      setSnapshot(repoId, branch, tree as any);
+
+      return { cached: false, tree };
+    }
+  );
+
+  /**
+   * GET /api/repos/:id/tree?branch=X — file tree for a connected repo.
+   * Kept for backwards compatibility; internally delegates to snapshot cache.
+   */
+  app.get<{ Params: { id: string }; Querystring: { branch: string } }>(
+    '/api/repos/:id/tree',
+    { preHandler: [requireAuth] },
+    async (req, reply) => {
+      const user = (req as any).user;
+      const repoId = Number(req.params.id);
+      const branch = (req.query as any).branch;
+
+      if (!branch) {
+        return reply.status(400).send({ error: 'branch query param required' });
+      }
+
+      if (!(await canAccess(user.userId, repoId))) {
+        return reply.status(403).send({ error: 'Access denied' });
+      }
+
+      // Serve from cache when available
+      const cached = getCachedTree(repoId, branch);
+      if (cached) return cached;
+
+      const repo = await db.query<{ owner: string; name: string }>(
+        'SELECT owner, name FROM connected_repos WHERE id = $1',
+        [repoId]
+      );
+      if (repo.rows.length === 0) {
+        return reply.status(404).send({ error: 'Repo not found' });
+      }
+
       const token = await getAdminGithubToken();
       const tree = await getFileTree(token, repo.rows[0].owner, repo.rows[0].name, branch);
+
+      // Seed the cache so subsequent /file requests can be served from it
+      setSnapshot(repoId, branch, tree as any);
+
       return tree;
     }
   );
 
   /**
-   * GET /api/repos/:id/file?branch=X&path=Y — file content from a connected repo.
+   * GET /api/repos/:id/file?branch=X&path=Y
+   *
+   * Returns file content. Checks the branch cache first so repeated opens
+   * of the same file don't hit the GitHub API. Content is stored in the
+   * snapshot on first fetch — this becomes the "base" for that file.
    */
   app.get<{ Params: { id: string }; Querystring: { branch: string; path: string } }>(
     '/api/repos/:id/file',
@@ -155,6 +235,12 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(403).send({ error: 'Access denied' });
       }
 
+      // Check the in-memory file cache — return immediately if present
+      const cachedContent = getCachedFile(repoId, branch, path);
+      if (cachedContent !== null) {
+        return { content: cachedContent, cached: true };
+      }
+
       const repo = await db.query<{ owner: string; name: string }>(
         'SELECT owner, name FROM connected_repos WHERE id = $1',
         [repoId]
@@ -164,8 +250,18 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const token = await getAdminGithubToken();
-      const content = await getFileContent(token, repo.rows[0].owner, repo.rows[0].name, path, branch);
-      return { content };
+      const content = await getFileContent(
+        token,
+        repo.rows[0].owner,
+        repo.rows[0].name,
+        path,
+        branch
+      );
+
+      // Store in the snapshot so subsequent requests for the same file are free
+      setCachedFile(repoId, branch, path, content);
+
+      return { content, cached: false };
     }
   );
 };

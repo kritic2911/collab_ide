@@ -85,19 +85,42 @@ export const createGroup = (name: string, user_ids: number[] = []) =>
 export const fetchUsers = () =>
   api.get<UserSummary[]>('/api/admin/users').then(r => r.data);
 
+/** Shape of a snapshot response from /api/repos/:id/snapshot */
+export interface BranchSnapshot {
+  /** True if the response was served from the server-side cache */
+  cached: boolean;
+  /** How old the cached entry is in ms (only present when cached=true) */
+  ageMs?: number;
+  /** Number of file contents already in the cache (only present when cached=true) */
+  fileCount?: number;
+  /** Flat git-tree items for this branch */
+  tree: { path: string; type: string }[];
+}
+
 /* ─── User: browsing ─── */
 export const fetchRepos = () =>
   api.get<ConnectedRepo[]>('/api/repos').then(r => r.data);
 
+/** Returns branch names converted to objects for the UI */
 export const fetchBranches = (repoId: number) =>
-  api.get<{ name: string }[]>(`/api/repos/${repoId}/branches`).then(r => r.data);
+  api.get<string[]>(`/api/repos/${repoId}/branches`).then(r => r.data.map(name => ({ name })));
 
+/**
+ * Fetch (or retrieve from server cache) the committed file tree for a branch.
+ * This seeds the branch-base snapshot used by the collaborative editor.
+ */
+export const fetchSnapshot = (repoId: number, branch: string) =>
+  api.get<BranchSnapshot>(
+    `/api/repos/${repoId}/snapshot`, { params: { branch } }
+  ).then(r => r.data);
+
+/** Backwards-compat: raw tree without snapshot metadata */
 export const fetchFileTree = (repoId: number, branch: string) =>
   api.get<{ path: string; type: string }[]>(
     `/api/repos/${repoId}/tree`, { params: { branch } }
   ).then(r => r.data);
 
 export const fetchFileContent = (repoId: number, branch: string, path: string) =>
-  api.get<{ content: string }>(
+  api.get<{ content: string; cached: boolean }>(
     `/api/repos/${repoId}/file`, { params: { branch, path } }
   ).then(r => r.data);

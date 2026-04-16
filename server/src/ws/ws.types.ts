@@ -40,11 +40,22 @@ export type ClientMessage =
       roomId: string;
       patches: DiffPatch[]; // array — Monaco batches rapid changes
       seq: number;          // monotonic counter per client, for ordering
+      content?: string;     // full editor content for peer sync
     }
   | {
-      type: 'request_peer_content';
+      type: 'chat_message';
       roomId: string;
-      username: string;     // peer whose document we want
+      text: string;          // max 2000 chars, server-validated
+    }
+  | {
+      type: 'chat_load_older';
+      roomId: string;
+      beforeId: number;      // cursor: load messages with id < this
+    }
+  | {
+      type: 'chat_delete';
+      roomId: string;
+      messageId: number;     // PG serial id of the message to delete
     };
 
 // ──────────────────────────────────────────────
@@ -80,6 +91,13 @@ export type ServerMessage =
       username: string;
       patches: DiffPatch[];
       seq: number;
+      content?: string;     // full editor content for peer sync
+    }
+  | {
+      type: 'hydrate_state';
+      roomId: string;
+      base: string | null;                   // committed file content from D2
+      diffs: { userId: number; patch: object }[]; // active peer diffs from D3
     }
   | {
       type: 'remote_push';
@@ -90,8 +108,47 @@ export type ServerMessage =
       commitSha: string; // short SHA for the banner: "abc1234 pushed to main"
     }
   | {
-      type: 'peer_content';
+      type: 'error';
+      message: string;
+    }
+  | {
+      type: 'chat_broadcast';
       roomId: string;
+      messageId: number;       // PG serial id for dedup
+      userId: number;
       username: string;
-      content: string;
+      avatarUrl: string | null;
+      text: string;            // plaintext, decrypted server-side
+      timestamp: number;
+    }
+  | {
+      type: 'chat_history';
+      roomId: string;
+      messages: {
+        id: number;
+        userId: number;
+        username: string;
+        avatarUrl: string | null;
+        text: string;
+        timestamp: number;
+      }[];
+    }
+  | {
+      type: 'chat_older_history';
+      roomId: string;
+      messages: {
+        id: number;
+        userId: number;
+        username: string;
+        avatarUrl: string | null;
+        text: string;
+        timestamp: number;
+      }[];
+      hasMore: boolean;       // false when no older messages remain
+    }
+  | {
+      type: 'chat_deleted';
+      roomId: string;
+      messageId: number;     // which message was removed
+      deletedBy: number;     // userId who deleted it
     };

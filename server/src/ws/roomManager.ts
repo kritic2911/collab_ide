@@ -1,97 +1,100 @@
 import type { AuthenticatedSocket, ServerMessage } from './ws.types.js';
+import * as presenceStore from '../state/presenceStore.js';
+import * as diffStore from '../state/diffStore.js';
+import * as pubsub from '../state/pubsub.js';
+import type { PubSubMessage } from '../state/pubsub.js';
 
 // ──────────────────────────────────────────────
-// Per-connection document state
+// Local socket registry — delivery mechanism ONLY
+//
+// This is NOT the source of truth for presence.
+// Presence truth lives in Redis (presenceStore).
+//
+// localSockets maps roomId → Set<AuthenticatedSocket>
+// scoped to THIS Fastify process. When a PubSub message
+// arrives for a room, we look up localSockets to find
+// which WebSockets on this instance need the message.
 // ──────────────────────────────────────────────
-export type PeerDocState = {
-  content: string;
-  seq: number;
-};
-
-// ──────────────────────────────────────────────
-// Room data structure — Map<roomId, Map<AuthenticatedSocket, PeerDocState>>
-// ──────────────────────────────────────────────
-const rooms = new Map<string, Map<AuthenticatedSocket, PeerDocState>>();
+const localSockets = new Map<string, Set<AuthenticatedSocket>>();
 
 // ──────────────────────────────────────────────
 // getRoomId — deterministic room key
 // Rule: filePath must be normalized (no leading slash, forward slashes only)
 // ──────────────────────────────────────────────
-export function getRoomId(repoId: string, branch: string, filePath: string): string {
+export function getRoomId(
+  repoId: string,
+  branch: string,
+  filePath: string
+): string {
   return `${repoId}:${branch}:${filePath}`;
-  // e.g. "repo_123:main:src/components/Editor.tsx"
 }
 
 // ──────────────────────────────────────────────
-// joinRoom — add a connection to a room with its initial content
+// joinRoom — register socket locally + update Redis presence + subscribe to PubSub
 // ──────────────────────────────────────────────
-export function joinRoom(roomId: string, conn: AuthenticatedSocket, initialContent: string): void {
-  let room = rooms.get(roomId);
+export async function joinRoom(
+  roomId: string,
+  conn: AuthenticatedSocket
+): Promise<void> {
+  // 1. Add to local socket registry
+  let room = localSockets.get(roomId);
   if (!room) {
-    room = new Map();
-    rooms.set(roomId, room);
+    room = new Set();
+    localSockets.set(roomId, room);
   }
-  room.set(conn, { content: initialContent, seq: 0 });
+  room.add(conn);
+
+  // 2. Update Redis presence (source of truth)
+  await presenceStore.join(roomId, conn.user.userId);
+
+  // 3. Subscribe to PubSub channel (idempotent — skips if already subscribed)
+  await pubsub.subscribe(roomId, (msg: PubSubMessage) => {
+    onPubSubMessage(roomId, msg, conn.user.userId);
+  });
 }
 
 // ──────────────────────────────────────────────
-// updatePeerContent — update tracked content after applying patches
+// leaveRoom — remove socket locally + clean Redis presence + delete diff + PubSub
 // ──────────────────────────────────────────────
-export function updatePeerContent(
+export async function leaveRoom(
   roomId: string,
-  conn: AuthenticatedSocket,
-  content: string,
-  seq: number,
-): void {
-  const room = rooms.get(roomId);
-  if (!room) return;
-  const state = room.get(conn);
-  if (state) {
-    state.content = content;
-    state.seq = seq;
+  conn: AuthenticatedSocket
+): Promise<void> {
+  // 1. Remove from local registry
+  const room = localSockets.get(roomId);
+  if (room) {
+    room.delete(conn);
+    if (room.size === 0) {
+      localSockets.delete(roomId);
+      // Last local socket left — unsubscribe from PubSub
+      await pubsub.unsubscribe(roomId);
+    }
   }
+
+  // 2. Update Redis presence
+  await presenceStore.leave(roomId, conn.user.userId);
+
+  // 3. Explicit diff cleanup (belt-and-suspenders alongside 60s TTL)
+  await diffStore.deleteDiff(roomId, conn.user.userId);
 }
 
 // ──────────────────────────────────────────────
-// getPeerDocState — get a single connection's tracked state
+// broadcastToLocalSockets — send to all local connections in a room
 // ──────────────────────────────────────────────
-export function getPeerDocState(
-  roomId: string,
-  conn: AuthenticatedSocket,
-): PeerDocState | undefined {
-  return rooms.get(roomId)?.get(conn);
-}
-
-// ──────────────────────────────────────────────
-// leaveRoom — remove a connection from a room, clean up empty rooms
-// ──────────────────────────────────────────────
-export function leaveRoom(roomId: string, conn: AuthenticatedSocket): void {
-  const room = rooms.get(roomId);
-  if (!room) return;
-
-  room.delete(conn);
-
-  if (room.size === 0) {
-    rooms.delete(roomId);
-  }
-}
-
-// ──────────────────────────────────────────────
-// broadcastToRoom — send a message to all connections in a room,
-//                   optionally excluding one (the sender)
-// ──────────────────────────────────────────────
-export function broadcastToRoom(
+export function broadcastToLocalSockets(
   roomId: string,
   msg: ServerMessage,
-  excludeConn?: AuthenticatedSocket,
+  excludeUserId?: number
 ): void {
-  const room = rooms.get(roomId);
+  const room = localSockets.get(roomId);
   if (!room) return;
 
   const payload = JSON.stringify(msg);
 
-  for (const [conn] of room.entries()) {
-    if (conn === excludeConn) continue;
+  for (const conn of room) {
+    if (excludeUserId !== undefined && conn.user.userId === excludeUserId) {
+      continue;
+    }
     if (conn.readyState === conn.OPEN) {
       conn.send(payload);
     }
@@ -99,20 +102,35 @@ export function broadcastToRoom(
 }
 
 // ──────────────────────────────────────────────
-// getRoomPeers — list of peers currently in a room (with their content)
+// broadcastToBranch — send to ALL sockets on any file in a repo:branch
+//
+// Used by webhook handler: when someone pushes to `main`, every user
+// viewing ANY file on `main` gets the notification — not just those
+// viewing a specific changed file.
+//
+// Returns the number of unique sockets that received the message.
 // ──────────────────────────────────────────────
-export function getRoomPeers(
-  roomId: string,
-): { username: string; avatarUrl: string | null; currentContent: string; seq: number }[] {
-  const room = rooms.get(roomId);
-  if (!room) return [];
+export function broadcastToBranch(
+  repoId: string,
+  branch: string,
+  msg: ServerMessage
+): number {
+  const prefix = `${repoId}:${branch}:`;
+  const payload = JSON.stringify(msg);
+  const sentTo = new Set<AuthenticatedSocket>();
 
-  return Array.from(room.entries()).map(([conn, state]) => ({
-    username: conn.user.username,
-    avatarUrl: conn.user.avatarUrl || null,
-    currentContent: state.content,
-    seq: state.seq,
-  }));
+  for (const [roomId, sockets] of localSockets) {
+    if (roomId.startsWith(prefix)) {
+      for (const conn of sockets) {
+        if (!sentTo.has(conn) && conn.readyState === conn.OPEN) {
+          conn.send(payload);
+          sentTo.add(conn);
+        }
+      }
+    }
+  }
+
+  return sentTo.size;
 }
 
 export function updatePeerState(roomId: string, conn: AuthenticatedSocket, content: string, seq: number): void {
@@ -125,18 +143,25 @@ export function updatePeerState(roomId: string, conn: AuthenticatedSocket, conte
 
 // ──────────────────────────────────────────────
 // removeFromAllRooms — clean up on disconnect
-// Returns the list of roomIds the connection was in (for peer_left broadcasts)
+// Returns the list of roomIds the connection was in
 // ──────────────────────────────────────────────
-export function removeFromAllRooms(conn: AuthenticatedSocket): string[] {
+export async function removeFromAllRooms(
+  conn: AuthenticatedSocket
+): Promise<string[]> {
   const affectedRooms: string[] = [];
 
-  for (const [roomId, room] of rooms) {
+  for (const [roomId, room] of localSockets) {
     if (room.has(conn)) {
       room.delete(conn);
       affectedRooms.push(roomId);
 
+      // Clean Redis presence + diff
+      await presenceStore.leave(roomId, conn.user.userId);
+      await diffStore.deleteDiff(roomId, conn.user.userId);
+
       if (room.size === 0) {
-        rooms.delete(roomId);
+        localSockets.delete(roomId);
+        await pubsub.unsubscribe(roomId);
       }
     }
   }
@@ -145,16 +170,98 @@ export function removeFromAllRooms(conn: AuthenticatedSocket): string[] {
 }
 
 // ──────────────────────────────────────────────
-// getPeerContent — look up a peer's stored document by username
+// onPubSubMessage — handle messages arriving from Redis PubSub
+//
+// When any server instance publishes to a room channel,
+// every subscriber (including this instance) receives it.
+// We relay the message to the local sockets, excluding
+// the user who originated it to avoid echo.
 // ──────────────────────────────────────────────
-export function getPeerContent(roomId: string, username: string): string | null {
-  const room = rooms.get(roomId);
-  if (!room) return null;
+function onPubSubMessage(
+  roomId: string,
+  msg: PubSubMessage,
+  _localUserId: number
+): void {
+  switch (msg.event) {
+    case 'peer_diff': {
+      const serverMsg: ServerMessage = {
+        type: 'peer_diff',
+        roomId,
+        username: (msg.payload as any).username ?? String(msg.userId),
+        patches: (msg.payload as any).patches ?? [],
+        seq: (msg.payload as any).seq ?? 0,
+        content: (msg.payload as any).content ?? undefined,
+      };
+      // Exclude the originating user from receiving their own diff
+      broadcastToLocalSockets(roomId, serverMsg, msg.userId);
+      break;
+    }
 
-  for (const [conn, state] of room.entries()) {
-    if (conn.user.username === username) {
-      return state.content;
+    case 'peer_joined': {
+      const serverMsg: ServerMessage = {
+        type: 'peer_joined',
+        roomId,
+        username: (msg.payload as any).username ?? String(msg.userId),
+        avatarUrl: (msg.payload as any).avatarUrl ?? null,
+      };
+      broadcastToLocalSockets(roomId, serverMsg, msg.userId);
+      break;
+    }
+
+    case 'peer_left': {
+      const serverMsg: ServerMessage = {
+        type: 'peer_left',
+        roomId,
+        username: (msg.payload as any).username ?? String(msg.userId),
+      };
+      broadcastToLocalSockets(roomId, serverMsg);
+      break;
+    }
+
+    case 'base_updated': {
+      // Webhook push received -- notify all clients in this room
+      const payload = msg.payload as any;
+      if (payload?.type === 'remote_push') {
+        const pushMsg: ServerMessage = {
+          type: 'remote_push',
+          roomId,
+          pushedBy: payload.pushedBy ?? 'unknown',
+          branch: payload.branch ?? '',
+          changedFiles: payload.changedFiles ?? [],
+          commitSha: payload.commitSha ?? '',
+        };
+        broadcastToLocalSockets(roomId, pushMsg);
+      }
+      break;
+    }
+
+    case 'chat_message': {
+      const p = msg.payload as any;
+      const chatMsg: ServerMessage = {
+        type: 'chat_broadcast',
+        roomId,
+        messageId: p.messageId,
+        userId: msg.userId,
+        username: p.username ?? String(msg.userId),
+        avatarUrl: p.avatarUrl ?? null,
+        text: p.text ?? '',
+        timestamp: p.timestamp ?? Date.now(),
+      };
+      // Broadcast to ALL local sockets including sender (echo confirmation)
+      broadcastToLocalSockets(roomId, chatMsg);
+      break;
+    }
+
+    case 'chat_deleted': {
+      const p = msg.payload as any;
+      const deleteMsg: ServerMessage = {
+        type: 'chat_deleted',
+        roomId,
+        messageId: p.messageId,
+        deletedBy: msg.userId,
+      };
+      broadcastToLocalSockets(roomId, deleteMsg);
+      break;
     }
   }
-  return null;
 }

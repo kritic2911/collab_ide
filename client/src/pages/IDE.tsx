@@ -11,6 +11,8 @@ import PresenceBar from '../components/PresenceBar';
 import CollabEditor from '../components/CollabEditor';
 import PeerDiffWindow from '../components/PeerDiffWindow';
 import WebhookLog from '../components/WebhookLog';
+import ChatPanel from '../components/ChatPanel';
+import { useChatStore } from '../store/chatStore';
 
 type TreeNode = {
   name: string;
@@ -168,37 +170,32 @@ export default function IDE() {
     currentRoomIdRef.current = null;
   }, [selectedRepo?.id, selectedBranch, filePathNorm]);
 
-  // ── Peer content state & polling ──
-  const [peerContent, setPeerContent] = useState<string | null>(null);
+  // Track peer content from live diff relay (no polling needed)
+  const [peerContentMap, setPeerContentMap] = useState<Map<string, string>>(new Map());
+
+  const peerContent = useMemo(() => {
+    if (!selectedPeerUsername) return null;
+    return peerContentMap.get(selectedPeerUsername) ?? null;
+  }, [selectedPeerUsername, peerContentMap]);
 
   const { sendMessage, isConnected } = useCollabSocket(
     Number.isFinite(repoIdNum),
     handleRoomJoined,
+    // onPeerContent: called when peer_diff arrives with content field
     (username, content) => {
-      if (username === selectedPeerUsername) {
-        setPeerContent(content);
-      }
+      setPeerContentMap((prev) => {
+        const next = new Map(prev);
+        next.set(username, content);
+        return next;
+      });
     }
   );
 
+  // Clear peer content map when switching files
   useEffect(() => {
-    if (!selectedPeerUsername || !isConnected || !currentRoomIdRef.current) {
-      setPeerContent(null);
-      return;
-    }
-
-    const roomId = currentRoomIdRef.current;
-    sendMessage({ type: 'request_peer_content', roomId, username: selectedPeerUsername });
-
-    const timer = window.setInterval(() => {
-      sendMessage({ type: 'request_peer_content', roomId, username: selectedPeerUsername });
-    }, 5000);
-
-    return () => {
-      window.clearInterval(timer);
-      setPeerContent(null);
-    };
-  }, [selectedPeerUsername, isConnected, sendMessage]);
+    setPeerContentMap(new Map());
+    useChatStore.getState().clear();
+  }, [selectedRepo?.id, selectedBranch, filePathNorm]);
 
   useRoom(
     sendMessage,
@@ -417,7 +414,7 @@ export default function IDE() {
           </div>
         </div>
 
-        <div style={{ ...cardStyle, padding: 0, height: 'calc(100vh - 140px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ ...cardStyle, padding: 0, height: 'calc(100vh - 140px)', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <div style={{ padding: '10px 12px', borderBottom: `1px solid ${colors.border}` }}>
             <div style={{ fontWeight: 800, fontSize: 13 }}>{activePath ?? 'Select a file'}</div>
             <div style={{ marginTop: 8 }}>
@@ -455,7 +452,7 @@ export default function IDE() {
                     const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                     if (!rid) return;
                     diffSeqRef.current += 1;
-                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: fileContent });
                   }}
                 />
               ) : (
@@ -469,7 +466,7 @@ export default function IDE() {
                     const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                     if (!rid) return;
                     diffSeqRef.current += 1;
-                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current });
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: fileContent });
                   }}
                   peerHighlight={peerHighlight}
                 />
@@ -481,6 +478,13 @@ export default function IDE() {
           <div style={{ padding: '6px 12px', borderTop: `1px solid ${colors.border}`, fontSize: 11, color: colors.muted }}>
             {isConnected ? 'Collaboration connected' : 'Connecting…'} {loadingFile ? ' · Loading file…' : ''}
           </div>
+
+          {/* Chat overlay panel */}
+          <ChatPanel
+            sendMessage={sendMessage}
+            roomId={currentRoomIdRef.current}
+            isConnected={isConnected}
+          />
         </div>
 
         <div style={{ height: 'calc(100vh - 140px)', overflow: 'auto' }}>
