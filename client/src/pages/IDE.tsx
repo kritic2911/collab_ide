@@ -11,6 +11,8 @@ import PresenceBar from '../components/PresenceBar';
 import CollabEditor from '../components/CollabEditor';
 import PeerDiffWindow from '../components/PeerDiffWindow';
 import WebhookLog from '../components/WebhookLog';
+import ChatPanel from '../components/ChatPanel';
+import { useChatStore } from '../store/chatStore';
 
 type TreeNode = {
   name: string;
@@ -192,6 +194,7 @@ export default function IDE() {
   // Clear peer content map when switching files
   useEffect(() => {
     setPeerContentMap(new Map());
+    useChatStore.getState().clear();
   }, [selectedRepo?.id, selectedBranch, filePathNorm]);
 
   useRoom(
@@ -411,7 +414,7 @@ export default function IDE() {
           </div>
         </div>
 
-        <div style={{ ...cardStyle, padding: 0, height: 'calc(100vh - 140px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ ...cardStyle, padding: 0, height: 'calc(100vh - 140px)', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <div style={{ padding: '10px 12px', borderBottom: `1px solid ${colors.border}` }}>
             <div style={{ fontWeight: 800, fontSize: 13 }}>{activePath ?? 'Select a file'}</div>
             <div style={{ marginTop: 8 }}>
@@ -475,6 +478,13 @@ export default function IDE() {
           <div style={{ padding: '6px 12px', borderTop: `1px solid ${colors.border}`, fontSize: 11, color: colors.muted }}>
             {isConnected ? 'Collaboration connected' : 'Connecting…'} {loadingFile ? ' · Loading file…' : ''}
           </div>
+
+          {/* Chat overlay panel */}
+          <ChatPanel
+            sendMessage={sendMessage}
+            roomId={currentRoomIdRef.current}
+            isConnected={isConnected}
+          />
         </div>
 
         <div style={{ height: 'calc(100vh - 140px)', overflow: 'auto' }}>
