@@ -1,59 +1,102 @@
-# GitHub Webhooks & Real-Time Collaboration Implementation
+# Webhooks Architecture & Setup
 
-We have successfully added GitHub webhook ingestion and real-time "live awareness" editing to CollabIDE. Users each work on their own local copy — they can **see** what others are editing (highlighted in each user's color) but **cannot modify** each other's files. Merging happens through normal git pull with merge conflict resolution. Seeing others' live progress helps anticipate and resolve conflicts.
+This document outlines how real-time GitHub Webhooks are implemented in CollabIDE and provides instructions for setting up testing environments across multiple developers.
 
-## Collaboration Model
+## The Problem: Webhooks in a Local Dev Environment
 
-- Each user edits their **own copy** of a file (read/write for self, read-only view of others).
-- **Presence dots** in a top bar specify who else is viewing the local file.
-- **Hovering edits** → Hovering your mouse over peer highlights displays a Monaco editor tooltip containing the exact strings their peers added, modified, or removed live on the editor.
-- **Push Events** → A webhook logger and push notification banner will warn users instantly when someone pushes updates to their currently checked out branch.
-- Native `WebSocket` on the client.
+GitHub sends webhooks to a public URL. Since CollabIDE runs locally during development, GitHub cannot reach `localhost:3000`. 
+Therefore, an **Ngrok tunnel** is required to expose the local server to the internet.
 
-## Important Configurations
+When multiple developers are testing on the same GitHub repository, **they CANNOT use the same webhook configuration**. If Dev A uses their Ngrok URL in the central webhook, Dev B will receive no events. 
 
-> [!IMPORTANT]
-> **`GITHUB_WEBHOOK_SECRET`** must be added to your `server/.env` and securely referenced when spinning up webhooks.
-> **`WEBHOOK_TARGET_URL`** must be specified accurately tracking your local tunneling routing software (e.g. `https://xxx.ngrok-free.app/webhooks/github`) so GitHub properly forwards requests to the proper path.
+### Best Practice for Team Collaboration:
+**Every developer must create their own webhook on the shared GitHub repository pointing to their own personal Ngrok URL.**
 
 ---
 
-## Final Changes Handled
+## 🛠️ Developer Setup Instructions
 
-### Database Updates
+Follow these exact steps to receive live GitHub pushes in your local CollabIDE instance:
 
-- **`003_webhooks.sql`**: Configured `webhook_events` tracking schema mapped closely to `repo_id`.
-- **`004_add_webhook_id.sql`**: Appended `webhook_id` references to `connected_repos`.
+### 1. Start your local tunnel
+Install Ngrok and expose your server port (default `3000`):
+```bash
+ngrok http 3000
+```
+*Note your Forwarding URL (e.g., `https://abcdef123.ngrok-free.app`). Leave this terminal running.*
+
+### 2. Configure your secret
+Create a random strong secret string (e.g., a UUID or long string).
+In `server/.env`, set:
+```env
+GITHUB_WEBHOOK_SECRET=your_super_secret_string_here
+```
+*Restart your node server (`npm run dev`) so it picks up the new secret.*
+
+### 3. Add YOUR Webhook to GitHub
+1. Go to the GitHub Repository on GitHub.com.
+2. Navigate to **Settings → Webhooks → Add webhook**.
+3. **Payload URL:** Paste your Ngrok URL and append `/webhooks/github`.
+   *(Example: `https://abcdef123.ngrok-free.app/webhooks/github`)*
+4. **Content type:** Select `application/json` (CollabIDE handles both JSON and URL-encoded, but JSON is preferred).
+5. **Secret:** Paste the exact `GITHUB_WEBHOOK_SECRET` you set in step 2.
+6. **Which events?** Choose **"Send me everything"** or select **"Pushes"**.
+7. Click **Add webhook**.
+
+> **Note:** GitHub will send an initial `ping` event. You should see a 200 OK in your ngrok terminal, and the Ping event will be logged in `server/webhooks.log`.
 
 ---
 
-### Backend Components
+## 🏗️ Architecture & Implementation
 
-- **`webhook.routes.ts`** — Support for JSON and FormBody decoding. Listens on `POST /webhooks/github`, verifies `X-Hub-Signature-256`, handles push events (`commits[].modified`), extracts exact file paths modified, stores to DB, and broadcasts `remote_push` banners via WS.
-- **`admin.routes.ts`** — Programmatic `POST` generation registering webhooks when connecting an external repository via the Github API.
-- **`index.ts`** — Reordered plugin registries to properly bind Fastify WS and FormBody.
-- **`ws.plugin.ts`** —
-  - Room computations: `${repoId}:${branch}:${filePath}`
-  - Authentication parsed through `url.searchParams.get('token')`
-  - Routes payload formats parsing `{ type: 'join_room', repoId, branch, filePath }` into distinct file-level rooms to reduce message broadcasting bloat.
+CollabIDE uses a resilient, horizontally scalable architecture for processing incoming webhooks.
+
+### 1. Payload Parsing & Security (The Entry Point)
+**Code:** `server/src/routes/webhook.routes.ts`
+
+When a POST request hits `/webhooks/github`, Fastify processes it.
+1. **Raw Body Capture**: We use a custom Fastify `addContentTypeParser` to capture the *exact raw Buffer string* before converting it to JSON. This is critical.
+2. **HMAC-SHA256 Verification**: GitHub secures webhooks by calculating an HMAC hex digest of the raw body using your secret, sending it in the `X-Hub-Signature-256` header.
+3. We recalculate the hash using the captured raw body and `GITHUB_WEBHOOK_SECRET`. 
+4. We use `crypto.timingSafeEqual()` to compare signatures, preventing timing attacks. 
+
+> *If verification fails, the server responds with 401 Unauthorized.*
+
+### 2. Persistence Layer
+Once verified, the payload is mapped to a connected repository in the database (`connected_repos` table via the `github_repo_id`).
+The event is then permanently stored in the `webhook_events` table. 
+* This allows users to view a historical log of all webhooks when they open the IDE, fetched via the REST endpoint `GET /api/repos/:repoId/events`.
+
+### 3. Real-time PubSub Distribution
+Webhooks represent **branch-wide events**. If someone pushes to `main`, anyone viewing *any* file on `main` should be notified.
+
+1. The webhook handler extracts the branch and changed files from the payload.
+2. It calls `publishGlobalWebhook()` from `server/src/state/pubsub.ts`.
+3. The event is published to the Redis channel `global:webhook_pushes`.
+
+**Why Redis PubSub?** 
+If the backend is scaled horizontally (e.g., 5 Node.js instances behind a load balancer), the webhook HTTP request only hits *one* instance. Redis broadcasts the event to *all 5 instances*, ensuring every connected client gets the notification regardless of which load-balancer node they are connected to.
+
+### 4. WebSocket Broadcast
+**Code:** `server/src/ws/roomManager.ts` & `server/src/index.ts`
+
+1. Upon scaling/boot, every backend instance subscribes to `global:webhook_pushes` (in `index.ts`).
+2. When a push event arrives via Redis, the instance executes `broadcastToBranch()`.
+3. `broadcastToBranch()` iterates over all local WebSockets. Any socket whose active room starts with `${repoId}:${branch}:` receives the `remote_push` WebSocket message.
+
+### 5. Client Consumption & UI
+**Code:** `client/src/pages/IDE.tsx` & `client/src/hooks/useCollabSocket.ts`
+
+1. The React hook `useCollabSocket` receives the `remote_push` packet.
+2. It dispatches a native browser `CustomEvent` (`collab:remote_push`).
+3. `IDE.tsx` listens for this event. 
+4. Upon triggering, it mounts a high-visibility banner: `"[Username] pushed [file] — your diff may now conflict."` 
+5. It also synthetically updates the `WebhookLog.tsx` UI widget to show the event instantly without a page refresh or REST call.
 
 ---
 
-### Frontend Components
+## 📊 File Logging 
 
-- **`useCollabSocket.ts`**
-  - Native `WebSocket` hook directly tied to `collabStore` (Zustand). Maps responses (`peer_joined`, `peer_diff`, etc.) directly into state.
-  - Generates custom `collab:remote_push` window events.
-- **`useRoom.ts`**
-  - Handles dynamic `join_room` dispatches when checking out different files within the Monaco Editor.
-- **`collabStore.ts`**
-  - Iteratively *accumulates* user patch sequences so edits aren't overwritten visually when other collaborators pause their typing strokes.
-- **`PeerDiffGutter.tsx`**
-  - Consumes editor variables and leverages `createDecorationsCollection` to colorize Monaco gutters according to user themes.
-  - Implements rich markdown hover messages denoting explicit insertion and deletion sequences.
-- **`PresenceBar.tsx`**
-  - Top boundary dots for each connected user within the current room instance.
-
-## Testing Setup
-
-To fully run your local environment, reference instructions within the `walkthrough.md`.
+For deeper auditing without touching PostgreSQL, backend logging runs natively:
+* `server/webhooks.log`: A dedicated append-only file tracking webhook receipts, signature verification results, repo matching, error catches, and broadcast socket counts.
+* `server/server.log`: A master log where all webhook logs are mirrored (prefixed with `[WEBHOOK]`) alongside general server startups, errors, and chat cleanups.
