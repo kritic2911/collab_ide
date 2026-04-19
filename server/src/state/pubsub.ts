@@ -103,3 +103,26 @@ export async function unsubscribe(roomId: string): Promise<void> {
   await redisPubSubClient.unsubscribe(channel);
   activeSubscriptions.delete(channel);
 }
+
+// ──────────────────────────────────────────────
+// Global Webhooks
+// ──────────────────────────────────────────────
+
+const GLOBAL_WEBHOOK_CHANNEL = 'global:webhook_pushes';
+
+export async function publishGlobalWebhook(payload: any): Promise<void> {
+  await redisClient.publish(GLOBAL_WEBHOOK_CHANNEL, JSON.stringify(payload));
+}
+
+export async function subscribeToGlobalWebhooks(onMessage: (msg: any) => void): Promise<void> {
+  await redisPubSubClient.subscribe(GLOBAL_WEBHOOK_CHANNEL);
+  redisPubSubClient.on('message', (channel, message) => {
+    if (channel === GLOBAL_WEBHOOK_CHANNEL) {
+      try {
+        onMessage(JSON.parse(message));
+      } catch (err) {
+        console.error('[PubSub] Failed to parse global webhook msg:', err);
+      }
+    }
+  });
+}

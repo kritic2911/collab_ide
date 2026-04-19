@@ -61,12 +61,51 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   }>('/api/admin/repos', { preHandler: [requireAdmin] }, async (req, reply) => {
     const { github_repo_id, owner, name, default_branch } = req.body;
     try {
+      let webhookId: number | null = null;
+      try {
+        const token = await getAdminToken(req);
+        // Ngrok or internet-accessible URL for webhooks
+        const webhookUrl = process.env.WEBHOOK_TARGET_URL || 'http://localhost:3001/webhooks/github';
+        const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+
+        if (webhookSecret) {
+          const res = await fetch(`https://api.github.com/repos/${owner}/${name}/hooks`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: 'web',
+              active: true,
+              events: ['push'],
+              config: {
+                url: webhookUrl,
+                content_type: 'json',
+                secret: webhookSecret,
+                insecure_ssl: '0'
+              }
+            })
+          });
+
+          if (res.ok) {
+            const data = (await res.json()) as { id: number };
+            webhookId = data.id;
+          } else {
+            req.server.log.error('Failed to register webhook on GitHub: ' + await res.text());
+          }
+        }
+      } catch (err: any) {
+        req.server.log.error('Failed to register webhook on GitHub: ' + err.message);
+      }
+
       const result = await db.query(
-        `INSERT INTO connected_repos (github_repo_id, owner, name, default_branch)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO connected_repos (github_repo_id, owner, name, default_branch, webhook_id)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (github_repo_id) DO NOTHING
          RETURNING *`,
-        [github_repo_id, owner, name, default_branch || 'main']
+        [github_repo_id, owner, name, default_branch || 'main', webhookId]
       );
 
       if (result.rows.length === 0) {

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-04-18 — GitHub Webhooks & Live Awareness
+### Real-Time Pipeline for Repository Sync
+Completed the end-to-end integration of GitHub webhooks to power file synchronization and branch-wide push notifications. The backend now securely ingests GitHub payloads via a custom parser, verifies HMAC-SHA256 signatures, logs them persistently, and triggers real-time UI updates across all WebSocket endpoints via Redis PubSub broadcasting.
+
+### Key Features
+- **Secure Webhook Ingestion** — Uses `crypto.timingSafeEqual` over Fastify raw Buffer captures to ensure 100% accurate signature validation, preventing timing attacks.
+- **Persistent Local Logging** — Added `server/webhooks.log` and `server/server.log` that safely append timestamped events and survive process restarts.
+- **Horizontal Scaling via PubSub** — Refactored Webhooks to publish to a `global:webhook_pushes` Redis channel instead of local-only memory. All backend nodes subscribe to this channel, ensuring cross-machine delivery.
+- **Branch-Wide Live Awareness** — When a user pushes code, any peer viewing *any file* on that branch instantly receives an alert banner: `"[Username] pushed [file] — your diff may now conflict."`, rather than being constrained to a per-file room subscription.
+- **Peer Diff Synchronization** — The diff window completely avoids shadow patches and directly requests the peer's actual document state over native WebSockets for a perfect side-by-side Monaco diff comparison.
+
+### Files Added
+- `server/src/utils/fileLogger.ts` — Persistent logging utility.
+- `webhooks_implementation.md` — Complete architectural and setup guide for the webhooks pipeline.
+
+### Files Modified
+- `server/src/routes/webhook.routes.ts` — Wrote robust raw payload extraction to fix a Fastify JSON stream preParsing bug; changed from local delivery to `publishGlobalWebhook`.
+- `server/src/state/pubsub.ts` — Added `publishGlobalWebhook` and `subscribeToGlobalWebhooks`.
+- `server/src/ws/roomManager.ts` — Implemented `broadcastToBranch`, iterating over `localSockets` to find all clients viewing the updated branch.
+- `server/src/index.ts` — Bootstrapped the Redis subscriber for global webhooks.
+- `server/.env.example` — Added necessary webhook secret keys.
 ## 2026-04-14 — In-File Chat Panel
 ### Real-Time Encrypted Chat with Persistence
 Added a collapsible chat panel to the collaborative IDE, enabling users editing the same file to communicate in real-time. Chat messages are encrypted at rest using AES-256-CBC (same `ENCRYPTION_KEY` as GitHub tokens) and stored permanently in PostgreSQL. When users join a room, the last 7 days of chat history are loaded automatically. Older messages (up to 30 days) can be paginated via a "Load older" button. A daily cleanup job removes messages older than 30 days.

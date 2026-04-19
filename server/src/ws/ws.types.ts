@@ -29,6 +29,7 @@ export type ClientMessage =
       repoId: string;
       branch: string;
       filePath: string; // e.g. "src/components/Editor.tsx"
+      content: string;  // user's current editor content
     }
   | {
       type: 'leave_room';
@@ -67,6 +68,8 @@ export type ServerMessage =
       peers: {
         username: string;
         avatarUrl: string | null;
+        currentContent: string;
+        seq: number;
       }[];
     }
   | {
@@ -74,6 +77,8 @@ export type ServerMessage =
       roomId: string;
       username: string;
       avatarUrl: string | null;
+      currentContent: string;
+      seq: number;
     }
   | {
       type: 'peer_left';

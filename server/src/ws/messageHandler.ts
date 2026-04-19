@@ -1,10 +1,12 @@
-import type { AuthenticatedSocket, ClientMessage, ServerMessage } from './ws.types.js';
+import type { AuthenticatedSocket, ClientMessage, DiffPatch, ServerMessage } from './ws.types.js';
 import {
   getRoomId,
   joinRoom,
   leaveRoom,
   broadcastToLocalSockets,
   removeFromAllRooms,
+  updatePeerState,
+  getPeerContent,
 } from './roomManager.js';
 import * as presenceStore from '../state/presenceStore.js';
 import * as diffStore from '../state/diffStore.js';

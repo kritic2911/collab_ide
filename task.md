@@ -1,0 +1,10 @@
+- [x] Create task checklist
+- [ ] Update server `ws.types.ts` with `content` on joins
+- [ ] Implement `applyPatches` helper in `messageHandler.ts` alongside client payload tracking in `roomManager.ts`
+- [ ] Update client `collabStore.ts` (store `peerDocuments`, preserve state on `peerLeft` for frozen viewer)
+- [ ] Update client `useRoom.ts` (send `content` on `join_room` payload)
+- [ ] Create `PeerDiffWindow.tsx` (Monaco `createDiffEditor`)
+- [ ] Update `IDE.tsx` to display diff viewer side-by-side or replace main content
+- [ ] Refine `PeerDiffGutter.tsx` re-rendering logic
+- [ ] Verify functionality
+- [ ] Produce `walkthrough.md`

@@ -102,6 +102,46 @@ export function broadcastToLocalSockets(
 }
 
 // ──────────────────────────────────────────────
+// broadcastToBranch — send to ALL sockets on any file in a repo:branch
+//
+// Used by webhook handler: when someone pushes to `main`, every user
+// viewing ANY file on `main` gets the notification — not just those
+// viewing a specific changed file.
+//
+// Returns the number of unique sockets that received the message.
+// ──────────────────────────────────────────────
+export function broadcastToBranch(
+  repoId: string,
+  branch: string,
+  msg: ServerMessage
+): number {
+  const prefix = `${repoId}:${branch}:`;
+  const payload = JSON.stringify(msg);
+  const sentTo = new Set<AuthenticatedSocket>();
+
+  for (const [roomId, sockets] of localSockets) {
+    if (roomId.startsWith(prefix)) {
+      for (const conn of sockets) {
+        if (!sentTo.has(conn) && conn.readyState === conn.OPEN) {
+          conn.send(payload);
+          sentTo.add(conn);
+        }
+      }
+    }
+  }
+
+  return sentTo.size;
+}
+
+export function updatePeerState(roomId: string, conn: AuthenticatedSocket, content: string, seq: number): void {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  if (room.has(conn)) {
+    room.set(conn, { content, seq });
+  }
+}
+
+// ──────────────────────────────────────────────
 // removeFromAllRooms — clean up on disconnect
 // Returns the list of roomIds the connection was in
 // ──────────────────────────────────────────────

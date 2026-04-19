@@ -48,13 +48,8 @@ const app = Fastify({ logger: true });
 await app.register(fastifyCors, {
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // add this line
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
 });
-// CORS — allow client origin
-// await app.register(fastifyCors, {
-//   origin: process.env.CLIENT_URL || 'http://localhost:5173',
-//   credentials: true,
-// });
 
 // Plugins (order matters: session → passport → websocket)
 await app.register(sessionPlugin);
@@ -76,6 +71,20 @@ await seedRoles();
 
 // Connect Redis (commands + PubSub clients)
 await connectRedis();
+
+import { subscribeToGlobalWebhooks } from './state/pubsub.js';
+import { broadcastToBranch } from './ws/roomManager.js';
+import { webhookLog } from './utils/fileLogger.js';
+
+// Setup Global Webhook Subscriber
+await subscribeToGlobalWebhooks((payload) => {
+  if (payload && payload.repoId && payload.branch && payload.msg) {
+    const sentCount = broadcastToBranch(payload.repoId, payload.branch, payload.msg);
+    if (sentCount > 0) {
+      webhookLog(`  [Instance] Delivered global push for repo ${payload.repoId} branch ${payload.branch} to ${sentCount} local socket(s)`);
+    }
+  }
+});
 
 // ──────────────────────────────────────────────
 // Chat cleanup — delete messages older than 30 days (runs every 24h)

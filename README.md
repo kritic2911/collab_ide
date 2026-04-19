@@ -10,6 +10,7 @@
 |Database|PostgreSQL only|Need to handle only user profiles, connected repos, chat messages|
 |In-memory state|Plain JS Maps|Replaces Redis for MVP|
 |Auth|GitHub OAuth via Passport.js|Gives you user identity + repo access in one flow|
+|Collaboration UI| Zustand + React Hooks | Native WebSocket, presence dots, and Monaco line-level peer highlighting with hover-diff summaries|
 
 ## Database
 ### Basic tables needed
@@ -138,6 +139,15 @@ docker compose exec -T db psql -U postgres -d collabide -f /dev/stdin < server/s
 Create `client/.env` from `client/.env.example` and keep:
 
 - `VITE_API_URL=http://localhost:3000`
+
+### GitHub Webhooks (Local Dev & Team Setup)
+
+For the Live Awareness and push notifications to function, CollabIDE must receive real-time webhooks from GitHub. Because GitHub cannot reach your local `localhost:3000`, **each developer must use Ngrok and their own unique webhook configuration**.
+
+Please read the detailed walkthrough and architecture guide located in [webhooks_implementation.md](./webhooks_implementation.md). It outlines:
+1. How to start your Ngrok tunnel
+2. Setting your unique `GITHUB_WEBHOOK_SECRET`
+3. Configuring a personal Webhook on the shared GitHub repository so that you do not break your teammates' environments.
 
 ## Pipeline Modifications & State Layer
 
