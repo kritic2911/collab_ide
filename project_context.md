@@ -4,7 +4,6 @@
 > **Course:** B.Tech Project (BTP), Semester 6  
 > **Team:** Kriti, Riddhika, Harshita  
 > **Repository:** [github.com/kritic2911/collab_ide](https://github.com/kritic2911/collab_ide)  
-> **Active Development Period:** March 21 – April 19, 2026 (30 calendar days)
 
 ---
 
@@ -29,7 +28,7 @@ The following project characteristics drove the model selection:
 | Constraint | Implication | Why Iterative Incremental Fits |
 |---|---|---|
 | **Small team (3 people)** | No bandwidth for heavyweight ceremonies | Lightweight sprints with implicit coordination |
-| **30-day development window** | Must ship working software fast | Each sprint produces a deployable increment |
+| **4 months development window** | Must ship working software fast | Each sprint produces a deployable increment |
 | **Evolving requirements** | The diff viewer was redesigned 3 times as we learned what worked | Iteration is a first-class concept, not a failure |
 | **No CI/CD or test framework** | Verification is manual and browser-based | Each increment is verified independently before the next starts |
 | **Parallel feature development** | Auth, WebSockets, and Admin were developed concurrently on branches | Feature branches enable parallel increments without destabilizing `main` |
@@ -41,7 +40,7 @@ The following project characteristics drove the model selection:
 |---|---|
 | **Waterfall** | Requirements evolved continuously. The diff viewer alone underwent 3 major rewrites — waterfall's sequential phases cannot accommodate this. |
 | **Scrum** | Requires formal ceremonies (daily standups, sprint planning, retrospectives, a product owner). The 3-person team coordinated informally via GitHub and direct communication. |
-| **Kanban** | Lacks the time-boxed delivery rhythm that structured our work. We naturally worked in weekly bursts with clear deliverables. |
+| **Kanban** | Lacks the time-boxed delivery rhythm that structured our work. We naturally worked in regular bursts with clear deliverables. |
 | **Spiral** | Designed for high-risk, large-scale projects with formal risk analysis phases — overkill for a BTP. |
 | **RAD** | Assumes reusable components and automated code generation — not applicable to a custom WebSocket/Monaco integration. |
 
@@ -49,15 +48,15 @@ The following project characteristics drove the model selection:
 
 ```mermaid
 graph TD
-    A["📋 Requirements<br/>Identify the next feature slice"] --> B["🏗️ Design<br/>Plan schema + API + UI changes"]
-    B --> C["💻 Implement<br/>Code on a feature branch"]
-    C --> D["🧪 Verify<br/>Manual browser testing"]
-    D --> E{"✅ Increment<br/>complete?"}
-    E -- "Yes" --> F["🔀 Merge to main<br/>Deploy increment"]
+    A[" Requirements<br/>Identify the next feature slice"] --> B[" Design<br/>Plan schema + API + UI changes"]
+    B --> C[" Implement<br/>Code on a feature branch"]
+    C --> D[" Verify<br/>Manual browser testing"]
+    D --> E{" Increment<br/>complete?"}
+    E -- "Yes" --> F[" Merge to main<br/>Deploy increment"]
     E -- "Needs iteration" --> B
     F --> G{"More features<br/>remaining?"}
     G -- "Yes" --> A
-    G -- "No" --> H["🚀 Final Release"]
+    G -- "No" --> H[" Final Release"]
 
     style A fill:#1a1b26,stroke:#7aa2f7,color:#c0caf5
     style B fill:#1a1b26,stroke:#bb9af7,color:#c0caf5
@@ -92,7 +91,7 @@ gitGraph
     checkout main
     merge webhooks tag: "Sprint 2"
     branch test
-    commit id: "Room presence"
+    commit id: "Check Room presence"
     checkout main
     merge test tag: "Sprint 3"
     branch caching
@@ -101,15 +100,15 @@ gitGraph
     checkout main
     merge caching tag: "Sprint 4"
     branch chat
+    commit id: "DB migrations"
     commit id: "Encrypted chat"
     checkout main
     merge chat tag: "Sprint 5"
-    branch wbehooks_imp
+    checkout webhooks
     commit id: "Fix 502 bug"
     commit id: "Global PubSub"
-    commit id: "File logging"
     checkout main
-    merge wbehooks_imp tag: "Sprint 6"
+    merge webhooks tag: "Sprint 6"
     commit id: "Docs + cleanup"
 ```
 
@@ -119,20 +118,20 @@ gitGraph
 
 ### 2.0 Sprint Summary Table
 
-| Sprint | Dates | Duration | Theme | Contributors | Key Deliverable |
-|---|---|---|---|---|---|
-| **0** | Mar 21–23 | 3 days | Project Bootstrap | Kriti | Repo scaffold, DB schema, README |
-| **1** | Mar 25–27 | 3 days | Auth & Access Control | Kriti, Riddhika | GitHub OAuth, Org code gate, Admin RBAC portal |
-| **2** | Mar 29–31 | 3 days | Real-Time Foundation | Kriti, Riddhika | WebSocket server, Webhook skeleton, Presence v1, Diff v1 |
-| **3** | Apr 3–5 | 3 days | Presence Refinement | Riddhika | Room-scoped presence tracking, Codebase overview |
-| **4** | Apr 10–11 | 2 days | State & Caching Layer | Harshita | Redis L1/L2/L3 cache, PubSub infrastructure |
-| **5** | Apr 13–14 | 2 days | Chat & Collaboration UX | Kriti, Riddhika | Encrypted in-file chat, useRoom coordination |
-| **6** | Apr 16–19 | 4 days | Webhook Hardening | Kriti | 502 fix, global PubSub, file logging, docs |
-| **7** | Future | — | Deployment & Advanced Collab | All | OT/CRDT, save-to-GitHub, deployment |
+| Sprint | Theme | Key Deliverable |
+|---|---|---|
+| **0** | Project Bootstrap | Repo scaffold, DB schema, README |
+| **1** | Auth & Access Control | GitHub OAuth, Org code gate, Admin RBAC portal |
+| **2** | Real-Time Foundation | WebSocket server, Webhook skeleton, Presence Bar v1, Diff Viewer v1 |
+| **3** | Presence Refinement | Room-scoped presence tracking, Codebase overview |
+| **4** | State & Caching Layer | Redis L1/L2/L3 cache, PubSub infrastructure |
+| **5** | Chat & Collaboration UX | Encrypted in-file chat, useRoom coordination |
+| **6** | Webhook Hardening | 502 fix, global PubSub messages |
+| **7*** | Deployment & Advanced Collab | OT/CRDT, save-to-GitHub, deployment |
 
 ---
 
-### Sprint 0 — Project Bootstrap (Mar 21–23)
+### Sprint 0 — Project Bootstrap
 
 **Objective:** Establish the repository structure, database schema, and development environment so all team members can begin parallel work.
 
@@ -143,21 +142,12 @@ gitGraph
 - Established `docker-compose.yml` for local PostgreSQL
 - Wrote migration `001_init.sql`
 
-**Git Evidence:**
-```
-ce80745 Mar 21 — Initial commit
-96cccb0 Mar 23 — updated readme
-21b3e70 Mar 23 — added database structure to readme
-d898258 Mar 23 — table structure fixed
-09c6d6b Mar 23 — added basic directory structure
-5e3bf03 Mar 23 — added client dir
-```
 
 **Increment Outcome:** A runnable (but empty) full-stack scaffold. Both `npm run dev` commands succeed. Database migrations apply cleanly. All team members can clone, install, and start developing independently.
 
 ---
 
-### Sprint 1 — Authentication & Access Control (Mar 25–27)
+### Sprint 1 — Authentication & Access Control
 
 **Objective:** Implement the complete authentication pipeline (org code → GitHub OAuth → JWT) and the admin portal for connecting and restricting GitHub repositories.
 
@@ -168,23 +158,13 @@ d898258 Mar 23 — table structure fixed
 - **Admin Dashboard:** Full RBAC management UI — connect repos, create roles/groups, assign access restrictions
 - **Migration `002_admin_portal.sql`:** Six new tables (`connected_repos`, `roles`, `user_roles`, `groups`, `user_groups`, `repo_access`)
 
-**Git Evidence:**
-```
-a58d7c7 Mar 25 Riddhika — Added GithubOAuth login with organisation code
-953f475 Mar 25 Riddhika — Added fixes
-b99b0b4 Mar 26 Kriti    — tried adding basic admin portal
-0b46c5a Mar 27 Kriti    — basic admin dashboard added
-454cfd3 Mar 27 Kriti    — fixed role and group config
-3992912 Mar 27 Kriti    — fixed role and group assignment
-```
-
-**Iteration Note:** The admin portal required 3 commits to stabilize — the initial attempt (`b99b0b4`) had broken role assignment logic that was fixed iteratively in `454cfd3` and `3992912`. This is a textbook example of within-sprint iteration.
+**Iteration Note:** The admin portal required 3 commits to stabilize — the initial attempt had broken role assignment logic that was fixed iteratively in the next 2 commits. This is a textbook example of within-sprint iteration.
 
 **Increment Outcome:** Users can authenticate via GitHub OAuth, admins can connect repositories and manage access. The `requireAuth` and `requireAdmin` middleware gates are operational.
 
 ---
 
-### Sprint 2 — Real-Time Foundation (Mar 29–31)
+### Sprint 2 — Real-Time Foundation
 
 **Objective:** Build the WebSocket infrastructure, implement the first version of webhook ingestion, and create the initial presence and diff awareness UI.
 
@@ -197,23 +177,9 @@ b99b0b4 Mar 26 Kriti    — tried adding basic admin portal
 - **Diff Viewer v1:** Side-by-side Monaco editor showing peer edits (patch-based reconstruction)
 - **Client hooks:** `useCollabSocket.ts`, `useRoom.ts`, `useWebSocket.ts`
 
-**Git Evidence:**
-```
-acd61fb Mar 29 Riddhika — Added the WS server
-2ad06c5 Mar 30 Kriti    — frontend + backend webhooks basic trial 1
-0c301ee Mar 30 Kriti    — Merge branch 'login' into webhooks
-236c1d9 Mar 30 Kriti    — walkthrough.md for understanding added
-1d582f3 Mar 30 Kriti    — added bubbles on files
-1dc3f22 Mar 30 Kriti    — check readme.md, walkthrough.md
-feb653f Mar 30 Kriti    — non persistence problem fixing
-d2b4735 Mar 30 Kriti    — diff window opening side by side
-caf295d Mar 30 Kriti    — some better version of diff window
-1425379 Mar 31 Kriti    — added basic setup for websockets framework
-```
-
 **Iteration Note:** The diff viewer went through 2 iterations within this single sprint:
-1. **v1** (`d2b4735`): "it shows only the chars added… it is not 'diff'ing properly yet and deleted characters are still being shown"
-2. **v2** (`caf295d`): "some better version of diff window but needs a lot lot more fixing"
+1. **v1**: "basic diff viewer with poor live difference handling."
+2. **v2**: "better diff viewer but with some issues with latency and updates"
 
 This demonstrates the iterative nature of the model — the team shipped an imperfect but functional increment, documented its limitations, and planned to revisit it.
 
@@ -221,7 +187,7 @@ This demonstrates the iterative nature of the model — the team shipped an impe
 
 ---
 
-### Sprint 3 — Presence Refinement (Apr 3–5)
+### Sprint 3 — Presence Refinement
 
 **Objective:** Harden the room-based presence system so it accurately tracks which users are viewing which files, and document the codebase for onboarding.
 
@@ -229,19 +195,13 @@ This demonstrates the iterative nature of the model — the team shipped an impe
 - **Room Presence Tracking:** Accurate `peer_joined` / `peer_left` events scoped to `repoId:branch:filePath` rooms
 - **Codebase Overview Document (`CODEBASE_OVERVIEW.md`):** Comprehensive 17KB technical reference covering all subsystems
 
-**Git Evidence:**
-```
-6b0d8c1 Apr 03 Riddhika — Tracking presence of all visitors in a room
-801e71f Apr 05 Riddhika — Added code overview
-```
-
 **Iteration Context:** This sprint represents the **second iteration** on presence (first was Sprint 2's bubbles). The Sprint 2 implementation showed presence but didn't properly track join/leave across file navigation. Sprint 3 fixed the lifecycle management.
 
 **Increment Outcome:** Presence bubbles now accurately reflect who is in the room. The codebase overview enables any team member to understand the full architecture.
 
 ---
 
-### Sprint 4 — State & Caching Layer (Apr 10–11)
+### Sprint 4 — State & Caching Layer
 
 **Objective:** Replace in-memory state management with a production-grade Redis-backed caching pipeline that supports horizontal scaling.
 
@@ -256,19 +216,13 @@ This demonstrates the iterative nature of the model — the team shipped an impe
 - **Presence Store (`presenceStore.ts`):** Redis sets for idempotent room participant tracking
 - **Docker Compose:** Added Redis service alongside PostgreSQL
 
-**Git Evidence:**
-```
-5d888cc Apr 10 Harshita — feat: branch caching implementation
-2eb6291 Apr 11 Harshita — feat(caching): end-to-end pipeline — initial clean commit
-```
-
 **Architectural Significance:** This sprint fundamentally changed the system's scalability characteristics. Before Sprint 4, all state lived in a single Node.js process's memory. After Sprint 4, state is externalized to Redis, enabling multiple backend instances behind a load balancer — a key requirement for production deployment.
 
 **Increment Outcome:** File content is cached across tiers. WebSocket messages relay through Redis PubSub. The system is architecturally ready for horizontal scaling.
 
 ---
 
-### Sprint 5 — In-File Chat & Collaboration UX (Apr 13–14)
+### Sprint 5 — In-File Chat & Collaboration UX
 
 **Objective:** Add a persistent, encrypted, real-time chat system scoped to file-level collaboration rooms, and refine the room coordination logic.
 
@@ -284,19 +238,13 @@ This demonstrates the iterative nature of the model — the team shipped an impe
 - **New WebSocket Protocol Types:** `chat_message`, `chat_broadcast`, `chat_history`, `chat_older_history`, `chat_deleted`
 - **Migration `005_chat.sql`:** `chat_messages` table with encrypted `message_enc` column
 
-**Git Evidence:**
-```
-c37c03e Apr 13 Kriti    — useRoom change
-33b6447 Apr 14 Riddhika — Added the chat feature
-```
-
 **Design Decision:** Chat messages are encrypted at rest but not end-to-end — the server decrypts before relaying. This was a deliberate trade-off: E2E encryption would prevent server-side features like pagination search and automated cleanup. For a BTP-scope project, server-side encryption provides sufficient protection against database-level data exposure.
 
 **Increment Outcome:** Users editing the same file can communicate in real-time. Chat history persists across sessions. The collaboration experience now includes both visual awareness (presence + diff) and communication (chat).
 
 ---
 
-### Sprint 6 — Webhook Hardening & Integration (Apr 16–19)
+### Sprint 6 — Webhook Hardening & Integration 
 
 **Objective:** Fix the broken webhook ingestion pipeline (502 errors), implement branch-wide live awareness notifications, add persistent server-side logging, and produce final documentation.
 
@@ -311,19 +259,10 @@ c37c03e Apr 13 Kriti    — useRoom change
   - `server/server.log` — master log mirroring all webhook entries plus general server events
 - **Documentation:** Updated `webhooks_implementation.md`, `CHANGELOG.md`, `README.md`, `.env.example`
 
-**Git Evidence:**
-```
-b3790b2 Apr 16 Kriti — added webhooks implementation, notification bubble, server.log, webhooks.log
-4a3dd5d Apr 16 Kriti — merged changes from other branch
-f38c000 Apr 18 Kriti — updated readme, changelog and webhooks_implementation plan
-5241850 Apr 19 Kriti — pushing webhooks branch to main
-1cec427 Apr 19 Kriti — readme fixed
-```
-
 **Iteration Context:** This is the **third iteration** on webhooks:
-1. **Sprint 2** (Mar 30): Skeleton — basic signature verification, DB storage, per-file broadcast (broken)
-2. **Sprint 4** (Apr 11): PubSub infrastructure added, but webhook broadcast still used per-file channels
-3. **Sprint 6** (Apr 16): Complete rewrite — fixed body parsing, switched to branch-wide global PubSub channel
+1. **Sprint 2**: Skeleton — basic signature verification, DB storage, per-file broadcast (broken)
+2. **Sprint 4**: PubSub infrastructure added, but webhook broadcast still used per-file channels
+3. **Sprint 6**: Complete rewrite — fixed body parsing, switched to branch-wide global PubSub channel
 
 This three-iteration arc is the strongest evidence for the Iterative Incremental model. The webhook system required real-world testing (ngrok + GitHub) to surface the 502 bug, which couldn't have been predicted during Sprint 2's initial design.
 
@@ -398,7 +337,7 @@ timeline
 
 ```mermaid
 graph TB
-    subgraph Client ["🖥️ Client (React + Vite)"]
+    subgraph Client [" Client (React + Vite)"]
         UI["Monaco Editor<br/>+ Presence Bar<br/>+ Chat Panel<br/>+ Webhook Log"]
         WS_CLIENT["useCollabSocket<br/>(Native WebSocket)"]
         REST["Axios REST Client"]
@@ -409,7 +348,7 @@ graph TB
         WS_CLIENT --> STORE
     end
 
-    subgraph Server ["⚙️ Server (Fastify + Node.js)"]
+    subgraph Server [" Server (Fastify + Node.js)"]
         ROUTES["REST Routes<br/>(auth, admin, repo, webhook)"]
         WS_PLUGIN["WS Plugin<br/>(JWT auth on upgrade)"]
         ROOM_MGR["Room Manager<br/>(local socket registry)"]
@@ -418,13 +357,13 @@ graph TB
         FILE_LOG["File Logger<br/>(server.log, webhooks.log)"]
     end
 
-    subgraph State ["📦 State Layer"]
+    subgraph State [" State Layer"]
         REDIS_CMD["Redis Commands<br/>(cache, diff store, presence)"]
         REDIS_PUB["Redis PubSub<br/>(peer events + global webhooks)"]
         LRU["L1 LRU Cache<br/>(in-memory)"]
     end
 
-    subgraph External ["🌐 External"]
+    subgraph External [" External"]
         GITHUB["GitHub API<br/>(Octokit)"]
         GH_WEBHOOK["GitHub Webhooks<br/>(POST /webhooks/github)"]
         PG["PostgreSQL<br/>(users, repos, events, chat)"]
@@ -449,18 +388,6 @@ graph TB
 
 ---
 
-## 5. Contribution Summary
-
-| Contributor | Commits | Primary Contributions |
-|---|---|---|
-| **Kriti** | 29 | Project lead. Admin portal, webhook pipeline (3 iterations), diff viewer (3 iterations), presence UI, useRoom coordination, all documentation, final integration |
-| **Riddhika** | 8 | GitHub OAuth + org code authentication, WebSocket server foundation, room presence tracking, codebase overview, encrypted chat system |
-| **Harshita** | 2 | Redis caching infrastructure (L1 LRU + L2 Redis + L3 GitHub), PubSub cross-process messaging, diff store, presence store |
-
----
-
----
-
 # Part B — Sparse PPT / Quick Recap Version
 
 *Use this for presentation slides. Each section maps to roughly one slide.*
@@ -470,11 +397,11 @@ graph TB
 ## Slide 1: What is CollabIDE?
 
 A **browser-based collaborative code editor** that connects to GitHub repositories and lets multiple developers:
-- 📂 Browse repos, branches, and files (via admin-connected GitHub repos)
-- 👀 See who's editing what file in real-time (presence bubbles)
-- 🔍 View a side-by-side diff of a peer's changes (Monaco diff editor)
-- 💬 Chat within the file context (encrypted, persistent)
-- 🔔 Get notified instantly when someone pushes to the branch (GitHub webhooks)
+-  Browse repos, branches, and files (via admin-connected GitHub repos)
+-  See who's editing what file in real-time (presence bubbles)
+-  View a side-by-side diff of a peer's changes (Monaco diff editor)
+-  Chat within the file context (encrypted, persistent)
+-  Get notified instantly when someone pushes to the branch (GitHub webhooks)
 
 ---
 
@@ -510,14 +437,14 @@ Realtime:  Native WebSockets + Redis PubSub
 ## Slide 4: Sprint Timeline
 
 ```
-Sprint 0  ████░░░░░░░░░░░░░░░░░░░░░░░░  Mar 21-23   Bootstrap
-Sprint 1  ░░░░████░░░░░░░░░░░░░░░░░░░░  Mar 25-27   Auth + Admin
-Sprint 2  ░░░░░░░░████░░░░░░░░░░░░░░░░  Mar 29-31   WebSocket + Webhooks v1
-Sprint 3  ░░░░░░░░░░░░░░██░░░░░░░░░░░░  Apr 3-5     Presence v2
-Sprint 4  ░░░░░░░░░░░░░░░░░░██░░░░░░░░  Apr 10-11   Redis Caching
-Sprint 5  ░░░░░░░░░░░░░░░░░░░░██░░░░░░  Apr 13-14   Chat
-Sprint 6  ░░░░░░░░░░░░░░░░░░░░░░████░░  Apr 16-19   Webhooks v3 + Docs
-Sprint 7  ░░░░░░░░░░░░░░░░░░░░░░░░░░▓▓  Future      OT/CRDT + Deploy
+Sprint 0  ████░░░░░░░░░░░░░░░░░░░░░░░░   Bootstrap
+Sprint 1  ░░░░████░░░░░░░░░░░░░░░░░░░░   Auth + Admin
+Sprint 2  ░░░░░░░░████░░░░░░░░░░░░░░░░   WebSocket + Webhooks v1
+Sprint 3  ░░░░░░░░░░░░░░██░░░░░░░░░░░░   Presence v2
+Sprint 4  ░░░░░░░░░░░░░░░░░░██░░░░░░░░   Redis Caching
+Sprint 5  ░░░░░░░░░░░░░░░░░░░░██░░░░░░   Chat
+Sprint 6  ░░░░░░░░░░░░░░░░░░░░░░████░░   Webhooks v3 + Docs
+Sprint 7  ░░░░░░░░░░░░░░░░░░░░░░░░░░▓▓   Future: OT/CRDT + Deploy
 ```
 
 ---
