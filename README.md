@@ -1,7 +1,9 @@
 # collab_ide
 
 ## Tech Stack
-| Layer | Use | Why| 
+
+| Layer | Use | Why|
+
 |---|---|---|
 |Backend|Node.js + Fastify| Fast, WebSocket-friendly, everyone knows JS|
 | WebSockets |ws library or Fastify's built-in | Simple, no overhead |
@@ -13,24 +15,25 @@
 |Collaboration UI| Zustand + React Hooks | Native WebSocket, presence dots, and Monaco line-level peer highlighting with hover-diff summaries|
 
 ## Database
+
 ### Basic tables needed
+
 **users:**
->  `id, github_id, username, avatar_url, 
+> `id, github_id, username, avatar_url,
   color_hex, github_token (encrypted), created_at`
 
 **repositories:**
->  `id, github_repo_id, owner_id, name, 
+> `id, github_repo_id, owner_id, name,
   full_name, webhook_id, created_at`
 
 **chat_messages:**
-> `id, repo_id, branch, filepath, 
-  author_id, content, line_pin_start, 
+> `id, repo_id, branch, filepath,
+  author_id, content, line_pin_start,
   line_pin_end, created_at`
 
 ## Starting Structure
-```
-.
-├── CHANGELOG.md
+
+```bash  
 ├── client
 │   ├── index.html
 │   ├── package-lock.json
@@ -144,11 +147,12 @@
 │   ├── webhooks.log
 │   └── WEBHOOKS.md
 ├── task.md
+├── CHANGELOG.md
 ├── tree.txt
 ├── walkthrough.md
 └── webhooks_implementation.md
 
-``` 
+```  
 
 ## Local setup (quick)
 
@@ -211,6 +215,7 @@ Create `client/.env` from `client/.env.example` and keep:
 For the Live Awareness and push notifications to function, CollabIDE must receive real-time webhooks from GitHub. Because GitHub cannot reach your local `localhost:3000`, **each developer must use Ngrok and their own unique webhook configuration**.
 
 Please read the detailed walkthrough and architecture guide located in [webhooks_implementation.md](./webhooks_implementation.md). It outlines:
+
 1. How to start your Ngrok tunnel
 2. Setting your unique `GITHUB_WEBHOOK_SECRET`
 3. Configuring a personal Webhook on the shared GitHub repository so that you do not break your teammates' environments.
@@ -218,7 +223,9 @@ Please read the detailed walkthrough and architecture guide located in [webhooks
 ## Pipeline Modifications & State Layer
 
 ### New Modules
+
 This integration refactors the state layer entirely via `server/src/state/`:
+
 - `cacheManager.ts`: Master orchestration for L1 -> L2 -> L3 base content retrieval.
 - `diffStore.ts`: Redis JSON array patch manager providing temporary rolling diff snapshots per user.
 - `lru.ts`: High-performance manual LRU implementation serving as L1.
@@ -227,4 +234,5 @@ This integration refactors the state layer entirely via `server/src/state/`:
 - `redis.client.ts`: Provides connection lifecycles for both master mapping and PubSub mechanisms.
 
 ### New Environment Variables
+
 - `REDIS_URL` (Optional): The connection string URL for the Redis server. Defaults to `redis://localhost:6379`.
