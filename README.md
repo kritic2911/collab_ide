@@ -3,7 +3,6 @@
 ## Tech Stack
 
 | Layer | Use | Why|
-
 |---|---|---|
 |Backend|Node.js + Fastify| Fast, WebSocket-friendly, everyone knows JS|
 | WebSockets |ws library or Fastify's built-in | Simple, no overhead |
@@ -33,7 +32,7 @@
 
 ## Starting Structure
 
-```bash  
+```  
 ├── client
 │   ├── index.html
 │   ├── package-lock.json
