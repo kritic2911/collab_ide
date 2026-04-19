@@ -43,3 +43,4 @@ secrets.json
 # AI Agent config — local only
 .agent/
 .vscode/
+.zed/
