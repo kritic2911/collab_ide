@@ -29,59 +29,125 @@
 
 ## Starting Structure
 ```
-collab-ide/
-├── server/
-│   ├── src/
-│   │   ├── auth/
-│   │   │   ├── github.strategy.ts     # passport-github2 strategy config
-│   │   │   ├── jwt.ts                 # sign / verify JWTs (jsonwebtoken)
-│   │   │   └── crypto.ts              # AES-256 encrypt/decrypt for GitHub token
-│   │   ├── db/
-│   │   │   ├── client.ts              # pg Pool singleton
-│   │   │   └── migrations/
-│   │   │       └── 001_init.sql       # users + connected_repos tables
-│   │   ├── routes/
-│   │   │   ├── auth.routes.ts         # GET /auth/github  GET /auth/github/callback  POST /auth/logout
-│   │   │   ├── repo.routes.ts         # POST /api/repos   GET /api/repos
-│   │   │   └── github.routes.ts       # GET /api/github/branches  /tree  /file
-│   │   ├── services/
-│   │   │   ├── github.service.ts      # Octokit wrapper — all GitHub API calls live here
-│   │   │   └── token.service.ts       # get/set encrypted token from DB for a userId
-│   │   ├── middleware/
-│   │   │   └── requireAuth.ts         # Fastify preHandler — verifies JWT, attaches req.user
-│   │   ├── plugins/
-│   │   │   ├── passport.plugin.ts     # registers @fastify/passport
-│   │   │   └── session.plugin.ts      # registers @fastify/session (needed by passport)
-│   │   └── index.ts                   # app entry — registers plugins + routes, starts server
-│   ├── .env                           # PORT, DATABASE_URL, GITHUB_CLIENT_ID/SECRET, JWT_SECRET, ENCRYPTION_KEY
-│   ├── tsconfig.json
-│   └── package.json
-│
-├── client/
-│   ├── src/
-│   │   ├── api/
-│   │   │   └── client.ts              # axios instance — attaches JWT from localStorage on every request
-│   │   ├── components/
-│   │   │   ├── FileTree.tsx            # recursive tree, handles files + folders, click → open file
-│   │   │   ├── BranchSelector.tsx      # controlled <select> of branches
-│   │   │   └── Editor.tsx              # Monaco wrapper — reads from fileStore, read-only for now
-│   │   ├── pages/
-│   │   │   ├── Login.tsx              # single button → window.location = server /auth/github
-│   │   │   ├── Dashboard.tsx          # repo URL input + list of connected repos
-│   │   │   └── IDE.tsx                # layout: sidebar (BranchSelector + FileTree) | Editor
-│   │   ├── store/
-│   │   │   └── fileStore.ts           # Zustand — Map<filePath, content>, activePath, activeBranch
-│   │   ├── hooks/
-│   │   │   └── useAuth.ts             # reads JWT from URL param on OAuth return, stores it, redirects
-│   │   ├── App.tsx                    # React Router routes: /login  /dashboard  /ide/:owner/:repo
-│   │   └── main.tsx
+.
+├── CHANGELOG.md
+├── client
 │   ├── index.html
-│   ├── vite.config.ts
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── src
+│   │   ├── api
+│   │   │   ├── admin.ts
+│   │   │   ├── client.ts
+│   │   │   └── repo.ts
+│   │   ├── App.tsx
+│   │   ├── components
+│   │   │   ├── BranchSelector.tsx
+│   │   │   ├── ChatPanel.tsx
+│   │   │   ├── CollabEditor.tsx
+│   │   │   ├── Editor.tsx
+│   │   │   ├── FileTree.tsx
+│   │   │   ├── PeerDiffGutter.tsx
+│   │   │   ├── PeerDiffWindow.tsx
+│   │   │   ├── PresenceBar.tsx
+│   │   │   └── WebhookLog.tsx
+│   │   ├── hooks
+│   │   │   ├── useAuth.ts
+│   │   │   ├── useCollabSocket.ts
+│   │   │   ├── useRoom.ts
+│   │   │   └── useWebSocket.ts
+│   │   ├── lib
+│   │   │   └── wsUrl.ts
+│   │   ├── main.tsx
+│   │   ├── pages
+│   │   │   ├── AdminDashboard.tsx
+│   │   │   ├── AuthCallback.tsx
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── IDE.tsx
+│   │   │   ├── InvalidCode.tsx
+│   │   │   ├── Login.tsx
+│   │   │   └── RepoBrowser.tsx
+│   │   ├── store
+│   │   │   ├── chatStore.ts
+│   │   │   ├── collabStore.ts
+│   │   │   ├── fileStore.ts
+│   │   │   └── repoStore.ts
+│   │   ├── ui
+│   │   │   ├── Shell.tsx
+│   │   │   └── styles.ts
+│   │   └── vite-env.d.ts
 │   ├── tsconfig.json
-│   └── package.json
-│
-├── docker-compose.yml                 # postgres service only for local dev
-└── .gitignore
+│   └── vite.config.ts
+├── CODEBASE_OVERVIEW.md
+├── docker-compose.yml
+├── implementation_plan.md
+├── implementation_plan_diff.md
+├── package-lock.json
+├── README.md
+├── server
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── server.log
+│   ├── src
+│   │   ├── auth
+│   │   │   ├── crypto.ts
+│   │   │   ├── github.strategy.ts
+│   │   │   └── jwt.ts
+│   │   ├── cache
+│   │   │   └── branchCache.ts
+│   │   ├── db
+│   │   │   ├── client.ts
+│   │   │   ├── migrations
+│   │   │   │   ├── 001_init.sql
+│   │   │   │   ├── 002_admin_portal.sql
+│   │   │   │   ├── 003_webhooks.sql
+│   │   │   │   ├── 004_add_webhook_id.sql
+│   │   │   │   └── 005_chat.sql
+│   │   │   ├── seedOrgCode.ts
+│   │   │   ├── seedRoles.ts
+│   │   │   └── seedUsers.ts
+│   │   ├── index.ts
+│   │   ├── middleware
+│   │   │   ├── requireAdmin.ts
+│   │   │   └── requireAuth.ts
+│   │   ├── plugins
+│   │   │   ├── passport.plugin.ts
+│   │   │   ├── session.plugin.ts
+│   │   │   ├── wh.plugin.ts
+│   │   │   ├── ws.plugin.ts
+│   │   │   └── wsPlugin.ts
+│   │   ├── routes
+│   │   │   ├── admin.routes.ts
+│   │   │   ├── auth.routes.ts
+│   │   │   ├── github.routes.ts
+│   │   │   ├── repo.routes.ts
+│   │   │   └── webhook.routes.ts
+│   │   ├── services
+│   │   │   ├── chatService.ts
+│   │   │   ├── github.service.ts
+│   │   │   └── token.service.ts
+│   │   ├── state
+│   │   │   ├── baseCache.ts
+│   │   │   ├── cacheManager.ts
+│   │   │   ├── diffStore.ts
+│   │   │   ├── lru.ts
+│   │   │   ├── presenceStore.ts
+│   │   │   ├── pubsub.ts
+│   │   │   └── redis.client.ts
+│   │   ├── utils
+│   │   │   └── fileLogger.ts
+│   │   └── ws
+│   │       ├── messageHandler.ts
+│   │       ├── roomManager.ts
+│   │       └── ws.types.ts
+│   ├── tsconfig.json
+│   ├── webhooks.log
+│   └── WEBHOOKS.md
+├── task.md
+├── tree.txt
+├── walkthrough.md
+└── webhooks_implementation.md
+
 ``` 
 
 ## Local setup (quick)
