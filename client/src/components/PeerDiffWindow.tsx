@@ -25,7 +25,7 @@ export interface PeerDiffWindowProps {
   filePath: string;
   onClose: () => void;
   onValueChange: (val: string) => void;
-  onDiffUpdate: (patches: DiffPatch[]) => void;
+  onDiffUpdate: (patches: DiffPatch[], currentContent: string) => void;
 }
 
 export default function PeerDiffWindow({
@@ -169,7 +169,8 @@ export default function PeerDiffWindow({
         text: ch.text,
         rangeLength: ch.rangeLength,
       }));
-      onDiffUpdate(patches);
+      const currentContent = editor.getModel()?.getValue() ?? '';
+      onDiffUpdate(patches, currentContent);
     });
   };
 

@@ -48,6 +48,7 @@ export async function publish(
   payload: PubSubMessage
 ): Promise<void> {
   const channel = channelName(roomId);
+  console.log(`[PubSub] PUBLISH ${channel} event=${payload.event} userId=${payload.userId}`);
   await redisClient.publish(channel, JSON.stringify(payload));
 }
 
@@ -74,6 +75,7 @@ export async function subscribe(
     if (_receivedChannel !== channel) return;
     try {
       const parsed = JSON.parse(rawMessage) as PubSubMessage;
+      console.log(`[PubSub] RECEIVED ${channel} event=${parsed.event} userId=${parsed.userId} instanceId=${(parsed as any).instanceId ?? 'none'}`);
       onMessage(parsed);
     } catch {
       console.error(`[PubSub] Failed to parse message on ${channel}`);

@@ -68,8 +68,8 @@ export type ServerMessage =
       peers: {
         username: string;
         avatarUrl: string | null;
-        currentContent: string;
-        seq: number;
+        currentContent?: string;
+        seq?: number;
       }[];
     }
   | {
@@ -77,8 +77,8 @@ export type ServerMessage =
       roomId: string;
       username: string;
       avatarUrl: string | null;
-      currentContent: string;
-      seq: number;
+      currentContent?: string;
+      seq?: number;
     }
   | {
       type: 'peer_left';

@@ -3,6 +3,10 @@ import * as presenceStore from '../state/presenceStore.js';
 import * as diffStore from '../state/diffStore.js';
 import * as pubsub from '../state/pubsub.js';
 import type { PubSubMessage } from '../state/pubsub.js';
+import crypto from 'node:crypto';
+
+// Unique per-process ID — used to skip PubSub echo from same instance
+export const INSTANCE_ID = crypto.randomUUID();
 
 // ──────────────────────────────────────────────
 // Local socket registry — delivery mechanism ONLY
@@ -87,9 +91,13 @@ export function broadcastToLocalSockets(
   excludeUserId?: number
 ): void {
   const room = localSockets.get(roomId);
-  if (!room) return;
+  if (!room) {
+    console.log(`[Broadcast] ${msg.type} → ${roomId}: no local sockets`);
+    return;
+  }
 
   const payload = JSON.stringify(msg);
+  let sent = 0;
 
   for (const conn of room) {
     if (excludeUserId !== undefined && conn.user.userId === excludeUserId) {
@@ -97,8 +105,11 @@ export function broadcastToLocalSockets(
     }
     if (conn.readyState === conn.OPEN) {
       conn.send(payload);
+      sent++;
     }
   }
+
+  console.log(`[Broadcast] ${msg.type} → ${roomId}: sent to ${sent}/${room.size} sockets (exclude=${excludeUserId ?? 'none'})`);
 }
 
 // ──────────────────────────────────────────────
@@ -133,13 +144,7 @@ export function broadcastToBranch(
   return sentTo.size;
 }
 
-export function updatePeerState(roomId: string, conn: AuthenticatedSocket, content: string, seq: number): void {
-  const room = rooms.get(roomId);
-  if (!room) return;
-  if (room.has(conn)) {
-    room.set(conn, { content, seq });
-  }
-}
+
 
 // ──────────────────────────────────────────────
 // removeFromAllRooms — clean up on disconnect
@@ -179,9 +184,13 @@ export async function removeFromAllRooms(
 // ──────────────────────────────────────────────
 function onPubSubMessage(
   roomId: string,
-  msg: PubSubMessage,
+  msg: PubSubMessage & { instanceId?: string },
   _localUserId: number
 ): void {
+  // Skip messages from this instance — they were already delivered locally
+  // by messageHandler.ts. Only relay messages from OTHER server processes.
+  if ((msg as any).instanceId === INSTANCE_ID) return;
+
   switch (msg.event) {
     case 'peer_diff': {
       const serverMsg: ServerMessage = {
@@ -203,6 +212,8 @@ function onPubSubMessage(
         roomId,
         username: (msg.payload as any).username ?? String(msg.userId),
         avatarUrl: (msg.payload as any).avatarUrl ?? null,
+        currentContent: (msg.payload as any).currentContent ?? undefined,
+        seq: (msg.payload as any).seq ?? 0,
       };
       broadcastToLocalSockets(roomId, serverMsg, msg.userId);
       break;

@@ -50,10 +50,19 @@ export function useCollabSocket(
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        console.log('[CollabSocket] ← received:', msg.type, msg.username ?? '', msg.content !== undefined ? `content(${String(msg.content).length})` : 'no-content');
         
         switch (msg.type) {
           case 'room_joined':
             setPeers(msg.peers || []);
+            // Seed peer content map from initial peer data
+            if (Array.isArray(msg.peers)) {
+              for (const peer of msg.peers) {
+                if (peer.currentContent !== undefined) {
+                  onPeerContentRef.current?.(peer.username, peer.currentContent);
+                }
+              }
+            }
             if (onRoomJoinedRef.current && msg.roomId) {
               onRoomJoinedRef.current(msg.roomId);
             }
@@ -66,10 +75,16 @@ export function useCollabSocket(
             }
             break;
           case 'peer_joined':
-            if (msg.username) peerJoined({
-              username: msg.username,
-              avatarUrl: msg.avatarUrl || null,
-            });
+            if (msg.username) {
+              peerJoined({
+                username: msg.username,
+                avatarUrl: msg.avatarUrl || null,
+              });
+              // Seed peer content from their initial editor state
+              if (msg.currentContent !== undefined) {
+                onPeerContentRef.current?.(msg.username, msg.currentContent);
+              }
+            }
             break;
           case 'peer_left':
             if (msg.username) peerLeft(msg.username);

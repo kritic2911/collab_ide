@@ -18,8 +18,8 @@ import { redisClient } from './redis.client.js';
 // without firing disconnect, the diff auto-expires in 60s.
 // ──────────────────────────────────────────────
 
-/** TTL for diff entries — 60 seconds rolling */
-const DIFF_TTL_SECONDS = 60;
+/** TTL for diff entries — 30 minutes (rolling on every write) */
+const DIFF_TTL_SECONDS = 1800;
 
 /** Build the Redis key for a user's diff in a room */
 function diffKey(roomId: string, userId: number): string {
@@ -44,7 +44,8 @@ export async function setDiff(
   const pipeline = redisClient.pipeline();
   pipeline.hset(key, 'patch', JSON.stringify(patch));
   pipeline.expire(key, DIFF_TTL_SECONDS);
-  await pipeline.exec();
+  const results = await pipeline.exec();
+  console.log(`[DiffStore] SET ${key} (TTL=${DIFF_TTL_SECONDS}s)`, results ? 'ok' : 'failed');
 }
 
 /**
@@ -59,11 +60,18 @@ export async function getDiff(
   roomId: string,
   userId: number
 ): Promise<object | null> {
-  const raw = await redisClient.hget(diffKey(roomId, userId), 'patch');
-  if (raw === null) return null;
+  const key = diffKey(roomId, userId);
+  const raw = await redisClient.hget(key, 'patch');
+  if (raw === null) {
+    console.log(`[DiffStore] GET ${key} → null`);
+    return null;
+  }
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    console.log(`[DiffStore] GET ${key} → ${raw.length} chars`);
+    return parsed;
   } catch {
+    console.log(`[DiffStore] GET ${key} → parse error`);
     return null;
   }
 }

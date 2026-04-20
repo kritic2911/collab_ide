@@ -41,7 +41,7 @@ export interface CollabEditorProps {
   /** Change when loading a new file so the diff baseline resets. */
   snapshotKey: string;
   onValueChange: (value: string) => void;
-  onDiffUpdate: (patches: DiffPatch[]) => void;
+  onDiffUpdate: (patches: DiffPatch[], currentContent: string) => void;
   peerHighlight?: {
     color: string;
     patches: DiffPatch[];
@@ -82,7 +82,9 @@ export default function CollabEditor({
         text: ch.text,
         rangeLength: ch.rangeLength,
       }));
-      onDiffUpdate(patches);
+      // Read the editor model's current value directly — React state is always stale here
+      const currentContent = editor.getModel()?.getValue() ?? '';
+      onDiffUpdate(patches, currentContent);
     });
 
 

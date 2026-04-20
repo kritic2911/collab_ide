@@ -36,6 +36,12 @@ export const redisPubSubClient = new Redis(REDIS_URL, {
  * @throws {Error} Throws if initial connection drops or ping fails.
  */
 export async function connectRedis(): Promise<void> {
+  // Attach connection lifecycle logging
+  redisClient.on('error', (err) => console.error('[Redis CMD] error:', err.message));
+  redisClient.on('reconnecting', () => console.log('[Redis CMD] reconnecting...'));
+  redisPubSubClient.on('error', (err) => console.error('[Redis PubSub] error:', err.message));
+  redisPubSubClient.on('reconnecting', () => console.log('[Redis PubSub] reconnecting...'));
+
   await Promise.all([
     redisClient.connect(),
     redisPubSubClient.connect(),

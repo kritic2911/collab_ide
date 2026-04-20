@@ -310,14 +310,18 @@ export default function IDE() {
     if (!selectedRepo || !selectedBranch) return;
     setError(null);
     setLoadingFile(true);
-    setActivePath(path);
     try {
       const data = await fetchFileContent(selectedRepo.id, selectedBranch, path);
       const text = data.content ?? '';
+      // Set content BEFORE activePath so that when useRoom fires
+      // (triggered by filePathNorm changing), contentRef already
+      // holds the correct file content.
       setFileContent(text);
+      setActivePath(path);
       setSnapshotKey(`${selectedRepo.id}-${selectedBranch}-${path}-${Date.now()}`);
     } catch (e: any) {
       setError(e?.response?.data?.error ?? e?.message ?? 'Failed to load file');
+      setActivePath(path); // still show the path even if load failed
     } finally {
       setLoadingFile(false);
     }
@@ -447,12 +451,12 @@ export default function IDE() {
                   filePath={activePath}
                   onClose={() => setSelectedPeerUsername(null)}
                   onValueChange={setFileContent}
-                  onDiffUpdate={(patches) => {
+                  onDiffUpdate={(patches, currentContent) => {
                     if (!isConnected) return;
                     const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                     if (!rid) return;
                     diffSeqRef.current += 1;
-                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: fileContent });
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: currentContent });
                   }}
                 />
               ) : (
@@ -461,12 +465,12 @@ export default function IDE() {
                   value={fileContent}
                   snapshotKey={snapshotKey}
                   onValueChange={setFileContent}
-                  onDiffUpdate={(patches) => {
+                  onDiffUpdate={(patches, currentContent) => {
                     if (!isConnected) return;
                     const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                     if (!rid) return;
                     diffSeqRef.current += 1;
-                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: fileContent });
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: currentContent });
                   }}
                   peerHighlight={peerHighlight}
                 />
