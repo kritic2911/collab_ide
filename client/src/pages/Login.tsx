@@ -205,7 +205,7 @@ export default function Login() {
     <div style={styles.container}>
       <div style={styles.glow} />
       <div style={styles.card}>
-        <div style={styles.logo}>CollabIDE</div>
+        <div style={styles.logo}>Collaborative IDE</div>
         <p style={styles.subtitle}>
           Real-time collaborative code editor.<br />
           Enter your organization code to get started.

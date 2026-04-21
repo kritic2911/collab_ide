@@ -509,19 +509,17 @@ export default function IDE() {
           <div style={{ padding: '6px 12px', borderTop: `1px solid ${colors.border}`, fontSize: 11, color: colors.muted }}>
             {isConnected ? 'Collaboration connected' : 'Connecting…'} {loadingFile ? ' · Loading file…' : ''}
           </div>
+        </div>
 
-          {/* Chat overlay panel */}
+        <div style={{ height: 'calc(100vh - 140px)', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {selectedRepo && (
+            <WebhookLog repoId={selectedRepo.id} liveEvent={liveWebhook} />
+          )}
           <ChatPanel
             sendMessage={sendMessage}
             roomId={currentRoomIdRef.current}
             isConnected={isConnected}
           />
-        </div>
-
-        <div style={{ height: 'calc(100vh - 140px)', overflow: 'auto' }}>
-          {selectedRepo && (
-            <WebhookLog repoId={selectedRepo.id} liveEvent={liveWebhook} />
-          )}
         </div>
       </div>
 

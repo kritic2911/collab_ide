@@ -43,7 +43,7 @@ export default function Shell({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            <div style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>CollabIDE</div>
+            <div style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>Collaborative IDE</div>
             <div style={{ color: colors.muted, fontSize: 13 }}>{title}</div>
           </div>
 
