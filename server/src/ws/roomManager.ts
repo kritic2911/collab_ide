@@ -194,5 +194,34 @@ function onPubSubMessage(
       }
       break;
     }
+
+    case 'chat_message': {
+      const p = msg.payload as any;
+      const chatMsg: ServerMessage = {
+        type: 'chat_broadcast',
+        roomId,
+        messageId: p.messageId,
+        userId: msg.userId,
+        username: p.username ?? String(msg.userId),
+        avatarUrl: p.avatarUrl ?? null,
+        text: p.text ?? '',
+        timestamp: p.timestamp ?? Date.now(),
+      };
+      // Broadcast to ALL local sockets including sender (echo confirmation)
+      broadcastToLocalSockets(roomId, chatMsg);
+      break;
+    }
+
+    case 'chat_deleted': {
+      const p = msg.payload as any;
+      const deleteMsg: ServerMessage = {
+        type: 'chat_deleted',
+        roomId,
+        messageId: p.messageId,
+        deletedBy: msg.userId,
+      };
+      broadcastToLocalSockets(roomId, deleteMsg);
+      break;
+    }
   }
 }

@@ -47,6 +47,21 @@ export type ClientMessage =
       startLine: number;
       endLine: number;
       resolution: 'keep_mine' | 'keep_theirs' | 'manual';
+    }
+  | {
+      type: 'chat_message';
+      roomId: string;
+      text: string;          // max 2000 chars, server-validated
+    }
+  | {
+      type: 'chat_load_older';
+      roomId: string;
+      beforeId: number;      // cursor: load messages with id < this
+    }
+  | {
+      type: 'chat_delete';
+      roomId: string;
+      messageId: number;     // PG serial id of the message to delete
     };
 
 // ──────────────────────────────────────────────
@@ -117,4 +132,45 @@ export type ServerMessage =
   | {
       type: 'error';
       message: string;
+    }
+  | {
+      type: 'chat_broadcast';
+      roomId: string;
+      messageId: number;       // PG serial id for dedup
+      userId: number;
+      username: string;
+      avatarUrl: string | null;
+      text: string;            // plaintext, decrypted server-side
+      timestamp: number;
+    }
+  | {
+      type: 'chat_history';
+      roomId: string;
+      messages: {
+        id: number;
+        userId: number;
+        username: string;
+        avatarUrl: string | null;
+        text: string;
+        timestamp: number;
+      }[];
+    }
+  | {
+      type: 'chat_older_history';
+      roomId: string;
+      messages: {
+        id: number;
+        userId: number;
+        username: string;
+        avatarUrl: string | null;
+        text: string;
+        timestamp: number;
+      }[];
+      hasMore: boolean;       // false when no older messages remain
+    }
+  | {
+      type: 'chat_deleted';
+      roomId: string;
+      messageId: number;     // which message was removed
+      deletedBy: number;     // userId who deleted it
     };

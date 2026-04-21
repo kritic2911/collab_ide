@@ -39,3 +39,6 @@ secrets.json
 # Editor backups
 *.swp
 *.swo
+
+# AI Agent config — local only
+.agent/

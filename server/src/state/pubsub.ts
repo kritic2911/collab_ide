@@ -20,7 +20,7 @@ import { redisClient, redisPubSubClient } from './redis.client.js';
  * never have parsing ambiguity.
  */
 export interface PubSubMessage {
-  event: 'peer_diff' | 'peer_joined' | 'peer_left' | 'base_updated' | 'conflict_detected' | 'conflict_resolved';
+  event: 'peer_diff' | 'peer_joined' | 'peer_left' | 'base_updated' | 'conflict_detected' | 'conflict_resolved' | 'chat_message' | 'chat_deleted';
   roomId: string;
   userId: number;
   payload: object;
