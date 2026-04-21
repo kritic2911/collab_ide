@@ -65,7 +65,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       try {
         const token = await getAdminToken(req);
         // Ngrok or internet-accessible URL for webhooks
-        const webhookUrl = process.env.WEBHOOK_TARGET_URL || 'http://localhost:3001/webhooks/github';
+        const webhookUrl = process.env.WEBHOOK_TARGET_URL || 'http://localhost:3000/webhooks/github';
         const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
         if (webhookSecret) {

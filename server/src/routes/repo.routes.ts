@@ -37,7 +37,11 @@ async function canAccess(userId: number, repoId: number): Promise<boolean> {
   );
   if (repo.rows.length === 0) return false;
   if (repo.rows[0].visibility === 'all') return true;
-
+  const role = await db.query(
+    `select role from users where id = $1`,
+    [userId]
+  )
+  if(role.rows[0].role === 'admin')  return true;
   // Check if user matches any access rule via role or group
   const access = await db.query(
     `SELECT 1 FROM repo_access ra

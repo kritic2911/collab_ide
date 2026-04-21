@@ -55,3 +55,6 @@ CREATE TABLE IF NOT EXISTS repo_access (
 CREATE INDEX IF NOT EXISTS idx_repo_access_repo ON repo_access(repo_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_user  ON user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_groups_user ON user_groups(user_id);
+
+INSERT INTO roles (name, is_predefined) VALUES ('admin', true);
+INSERT INTO roles (name, is_predefined) VALUES ('user', true);
