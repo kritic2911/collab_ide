@@ -6,11 +6,15 @@ import { redisClient } from './redis.client.js';
 // Redis type: Set
 //   Key:   presence:{roomId}
 //   Value: Set<userId (as string)>
+//   TTL:   5 minutes (rolling, reset on every join)
 //
-// No TTL on presence keys — presence is managed
-// explicitly via join/leave calls. The D3 rolling
-// TTL handles the zombie scenario independently.
+// The rolling TTL acts as a dead-man switch: if all
+// sockets in a room crash without firing disconnect,
+// the presence set auto-expires in 5 minutes.
 // ──────────────────────────────────────────────
+
+/** Rolling TTL for presence sets — 5 minutes */
+const PRESENCE_TTL_SECONDS = 300;
 
 /** Build the Redis key for a room's presence set */
 function presenceKey(roomId: string): string {
@@ -19,17 +23,22 @@ function presenceKey(roomId: string): string {
 
 /**
  * Add a user to a room's presence set (idempotent).
+ * Refreshes the rolling 5-minute TTL on each join.
  *
  * @param roomId {string} The unique identifier for the room.
  * @param userId {number} The user ID to add to presence.
  * @returns {Promise<void>} Resolves when user is added to the set.
- * @throws {Error} Throws if Redis SADD operation fails.
+ * @throws {Error} Throws if Redis SADD/EXPIRE pipeline fails.
  */
 export async function join(
   roomId: string,
   userId: number
 ): Promise<void> {
-  await redisClient.sadd(presenceKey(roomId), String(userId));
+  const key = presenceKey(roomId);
+  const pipeline = redisClient.pipeline();
+  pipeline.sadd(key, String(userId));
+  pipeline.expire(key, PRESENCE_TTL_SECONDS);
+  await pipeline.exec();
 }
 
 /**

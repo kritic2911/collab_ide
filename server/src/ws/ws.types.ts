@@ -40,6 +40,13 @@ export type ClientMessage =
       patches: DiffPatch[]; // array — Monaco batches rapid changes
       seq: number;          // monotonic counter per client, for ordering
       content?: string;     // full editor content for peer sync
+    }
+  | {
+      type: 'resolve_conflict';
+      roomId: string;
+      startLine: number;
+      endLine: number;
+      resolution: 'keep_mine' | 'keep_theirs' | 'manual';
     };
 
 // ──────────────────────────────────────────────
@@ -77,7 +84,7 @@ export type ServerMessage =
       type: 'hydrate_state';
       roomId: string;
       base: string | null;                   // committed file content from D2
-      diffs: { userId: number; patch: object }[]; // active peer diffs from D3
+      diffs: { userId: number; username: string; patch: object }[]; // active peer diffs from D3
     }
   | {
       type: 'remote_push';
@@ -86,6 +93,26 @@ export type ServerMessage =
       branch: string;
       changedFiles: string[];
       commitSha: string; // short SHA for the banner: "abc1234 pushed to main"
+    }
+  | {
+      type: 'conflict_detected';
+      roomId: string;
+      conflicts: {
+        startLine: number;
+        endLine: number;
+        lines: number[];
+        preview: { line: number; base: string; userA: string; userB: string }[];
+        userA: { userId: string; username: string };
+        userB: { userId: string; username: string };
+      }[];
+    }
+  | {
+      type: 'conflict_resolved';
+      roomId: string;
+      startLine: number;
+      endLine: number;
+      resolution: string;
+      resolvedBy: string;
     }
   | {
       type: 'error';

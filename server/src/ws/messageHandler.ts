@@ -11,6 +11,7 @@ import * as diffStore from '../state/diffStore.js';
 import * as baseCache from '../state/baseCache.js';
 import * as pubsub from '../state/pubsub.js';
 import type { PubSubMessage } from '../state/pubsub.js';
+import { onResolveConflict } from './conflictHandler.js';
 
 // ──────────────────────────────────────────────
 // handleMessage — route incoming JSON by `type`
@@ -39,6 +40,10 @@ export function handleMessage(
 
     case 'diff_update':
       onDiffUpdate(conn, msg);
+      break;
+
+    case 'resolve_conflict':
+      onResolveConflict(conn, msg);
       break;
 
     default:
@@ -128,10 +133,28 @@ async function onJoinRoom(
   // 6. Fetch all active peer diffs
   const diffsMap = await diffStore.getAllDiffs(roomId, otherPeerIds);
 
-  // Convert Map to array for JSON serialization
-  const diffs: { userId: number; patch: object }[] = [];
+  // Build userId→username map for hydrate_state
+  const userIdToUsername = new Map<number, string>();
+  if (otherPeerIds.length > 0) {
+    const { db: dbClient } = await import('../db/client.js');
+    const ph = otherPeerIds.map((_, i) => `$${i + 1}`).join(', ');
+    const nameResult = await dbClient.query<{ id: number; username: string }>(
+      `SELECT id, username FROM users WHERE id IN (${ph})`,
+      otherPeerIds
+    );
+    for (const row of nameResult.rows) {
+      userIdToUsername.set(row.id, row.username);
+    }
+  }
+
+  // Convert Map to array for JSON serialization (include username)
+  const diffs: { userId: number; username: string; patch: object }[] = [];
   for (const [userId, patch] of diffsMap) {
-    diffs.push({ userId, patch });
+    diffs.push({
+      userId,
+      username: userIdToUsername.get(userId) ?? String(userId),
+      patch,
+    });
   }
 
   // 7. Send single atomic hydrate_state to the joining client

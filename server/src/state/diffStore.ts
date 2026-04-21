@@ -3,31 +3,32 @@ import { redisClient } from './redis.client.js';
 // ──────────────────────────────────────────────
 // Diff Store (D3) — per-user snapshot of active edits
 //
-// Storage: Redis HSET
-//   Key:    diff:{roomId}:{userId}
-//   Field:  "patch"
-//   Value:  JSON-stringified Monaco patch array
+// Storage: Redis Hash (one hash per room)
+//   Key:    diffs:{roomId}
+//   Field:  userId (as string)
+//   Value:  JSON-stringified Monaco patch object
 //   TTL:    60 seconds (rolling, reset on every write)
 //
-// Design decision (Option B — HSET):
-//   One snapshot per user per room. Monaco tracks edit
-//   history on the client. The server only needs to know
-//   "what does User B's file look like right now?"
+// Design: One hash per room. Each user's diff is a field
+// inside that hash. This enables single-roundtrip HGETALL
+// for fetching all peer diffs, and eliminates the KEYS scan
+// that individual keys would require.
 //
 // Rolling TTL is the dead-man switch: if a socket crashes
 // without firing disconnect, the diff auto-expires in 60s.
 // ──────────────────────────────────────────────
 
-/** TTL for diff entries — 60 seconds rolling */
+/** TTL for the room's diff hash — 60 seconds rolling */
 const DIFF_TTL_SECONDS = 60;
 
-/** Build the Redis key for a user's diff in a room */
-function diffKey(roomId: string, userId: number): string {
-  return `diff:${roomId}:${userId}`;
+/** Build the Redis hash key for a room's diffs */
+function diffsKey(roomId: string): string {
+  return `diffs:${roomId}`;
 }
 
 /**
  * Store (or overwrite) a user's current diff snapshot with a rolling 60s TTL.
+ * Uses a pipeline to atomically HSET the field and reset the TTL.
  *
  * @param roomId {string} The unique identifier for the room.
  * @param userId {number} The ID of the user submitting the patch.
@@ -40,15 +41,15 @@ export async function setDiff(
   userId: number,
   patch: object
 ): Promise<void> {
-  const key = diffKey(roomId, userId);
+  const key = diffsKey(roomId);
   const pipeline = redisClient.pipeline();
-  pipeline.hset(key, 'patch', JSON.stringify(patch));
+  pipeline.hset(key, String(userId), JSON.stringify(patch));
   pipeline.expire(key, DIFF_TTL_SECONDS);
   await pipeline.exec();
 }
 
 /**
- * Retrieve a single user's diff snapshot.
+ * Retrieve a single user's diff snapshot from the room hash.
  *
  * @param roomId {string} The unique identifier for the room.
  * @param userId {number} The ID of the user to look up.
@@ -59,7 +60,7 @@ export async function getDiff(
   roomId: string,
   userId: number
 ): Promise<object | null> {
-  const raw = await redisClient.hget(diffKey(roomId, userId), 'patch');
+  const raw = await redisClient.hget(diffsKey(roomId), String(userId));
   if (raw === null) return null;
   try {
     return JSON.parse(raw);
@@ -69,12 +70,13 @@ export async function getDiff(
 }
 
 /**
- * Retrieve all active diffs for a room for the provided list of user IDs.
+ * Retrieve all active diffs for a room in a single HGETALL round-trip.
+ * Filters to only the provided userIds to avoid returning stale fields.
  *
  * @param roomId {string} The unique identifier for the room.
  * @param userIds {number[]} Array of user IDs expected to be in the room.
  * @returns {Promise<Map<number, object>>} Map of user ID to their active patch object.
- * @throws {Error} Throws if Redis HGET pipelining fails.
+ * @throws {Error} Throws if Redis HGETALL operation fails.
  */
 export async function getAllDiffs(
   roomId: string,
@@ -83,20 +85,18 @@ export async function getAllDiffs(
   const result = new Map<number, object>();
   if (userIds.length === 0) return result;
 
-  const entries = await Promise.all(
-    userIds.map(async (uid) => {
-      const raw = await redisClient.hget(diffKey(roomId, uid), 'patch');
-      return { uid, raw };
-    })
-  );
+  // Single round-trip: fetch all fields from the room hash
+  const all = await redisClient.hgetall(diffsKey(roomId));
 
-  for (const { uid, raw } of entries) {
-    if (raw !== null) {
-      try {
-        result.set(uid, JSON.parse(raw));
-      } catch {
-        // Corrupted entry — skip silently
-      }
+  // Build a lookup set for O(1) membership checks
+  const wantedIds = new Set(userIds.map(String));
+
+  for (const [field, raw] of Object.entries(all)) {
+    if (!wantedIds.has(field)) continue;
+    try {
+      result.set(Number(field), JSON.parse(raw));
+    } catch {
+      // Corrupted entry — skip silently
     }
   }
 
@@ -104,16 +104,16 @@ export async function getAllDiffs(
 }
 
 /**
- * Explicitly delete a user's diff on disconnect.
+ * Explicitly delete a user's diff field from the room hash on disconnect.
  *
  * @param roomId {string} The unique identifier for the room.
  * @param userId {number} The user ID whose diff should be deleted.
- * @returns {Promise<void>} Resolves when the key is successfully deleted.
- * @throws {Error} Throws if Redis DEL operation fails.
+ * @returns {Promise<void>} Resolves when the field is removed.
+ * @throws {Error} Throws if Redis HDEL operation fails.
  */
 export async function deleteDiff(
   roomId: string,
   userId: number
 ): Promise<void> {
-  await redisClient.del(diffKey(roomId, userId));
+  await redisClient.hdel(diffsKey(roomId), String(userId));
 }

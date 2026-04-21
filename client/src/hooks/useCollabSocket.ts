@@ -13,6 +13,8 @@ export function useCollabSocket(
   onRoomJoined?: (roomId: string) => void,
   onPeerContent?: (username: string, content: string) => void,
   onHydrateState?: (base: string | null, diffs: { userId: number; patch: any }[]) => void,
+  onConflictDetected?: (conflicts: any[]) => void,
+  onConflictResolved?: (startLine: number, endLine: number, resolution: string, resolvedBy: string) => void,
 ): CollabSocketResult {
   const ws = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -27,6 +29,10 @@ export function useCollabSocket(
   onRoomJoinedRef.current = onRoomJoined;
   const onHydrateRef = useRef(onHydrateState);
   onHydrateRef.current = onHydrateState;
+  const onConflictDetectedRef = useRef(onConflictDetected);
+  onConflictDetectedRef.current = onConflictDetected;
+  const onConflictResolvedRef = useRef(onConflictResolved);
+  onConflictResolvedRef.current = onConflictResolved;
 
   // Destructure store actions
   const { setPeers, peerJoined, peerLeft, peerDiff } = useCollabStore();
@@ -78,7 +84,7 @@ export function useCollabSocket(
               peerDiff(msg.username, msg.patches, msg.seq ?? Date.now());
             }
             // If the peer_diff includes full content, fire the content callback
-            if (msg.username && msg.content !== undefined) {
+            if (msg.username && msg.content != null) {
               onPeerContentRef.current?.(msg.username, msg.content);
             }
             break;
@@ -89,6 +95,18 @@ export function useCollabSocket(
             break;
           case 'remote_push':
             window.dispatchEvent(new CustomEvent('collab:remote_push', { detail: msg }));
+            break;
+          case 'conflict_detected':
+            if (msg.conflicts && onConflictDetectedRef.current) {
+              onConflictDetectedRef.current(msg.conflicts);
+            }
+            break;
+          case 'conflict_resolved':
+            if (onConflictResolvedRef.current) {
+              onConflictResolvedRef.current(
+                msg.startLine, msg.endLine, msg.resolution, msg.resolvedBy
+              );
+            }
             break;
           case 'error':
             console.error('Collab socket error from server:', msg.message);

@@ -25,7 +25,7 @@ export interface PeerDiffWindowProps {
   filePath: string;
   onClose: () => void;
   onValueChange: (val: string) => void;
-  onDiffUpdate: (patches: DiffPatch[]) => void;
+  onDiffUpdate: (patches: DiffPatch[], currentContent: string) => void;
 }
 
 export default function PeerDiffWindow({
@@ -169,7 +169,10 @@ export default function PeerDiffWindow({
         text: ch.text,
         rangeLength: ch.rangeLength,
       }));
-      onDiffUpdate(patches);
+      // Read current content directly from the editor model,
+      // not from React state, to avoid stale closure issues.
+      const currentContent = editor.getModel()?.getValue() ?? '';
+      onDiffUpdate(patches, currentContent);
     });
   };
 
@@ -193,9 +196,6 @@ export default function PeerDiffWindow({
           <span style={{ color: myColor, fontWeight: 'bold' }}>You</span>
           {' vs '}
           <span style={{ color: theirColor, fontWeight: 'bold' }}>{peerUsername}</span>
-          {peerContent === null && (
-            <span style={{ marginLeft: 12, opacity: 0.6 }}>Loading peer content…</span>
-          )}
         </div>
         <button type="button" onClick={onClose} style={{ ...buttonBase, padding: '4px 8px', fontSize: 12 }}>
           Close Diff
@@ -223,23 +223,77 @@ export default function PeerDiffWindow({
             }}
           />
         </div>
-        {/* Right: peer's file (read-only) */}
-        <div style={{ flex: 1 }}>
-          <Editor
-            height="100%"
-            theme="vs-dark"
-            path={`peer-${peerUsername}-${filePath}`}
-            language={lang}
-            value={peerContent ?? ''}
-            onMount={onRightMount}
-            options={{
-              readOnly: true,
-              minimap: { enabled: false },
-              fontSize: 13,
-              wordWrap: 'on',
-              scrollBeyondLastLine: false,
-            }}
-          />
+        {/* Right: peer's file (read-only) or designed empty state */}
+        <div style={{ flex: 1, position: 'relative' }}>
+          {peerContent === null ? (
+            /* Designed empty state — contextual message instead of blank panel */
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                padding: 32,
+                textAlign: 'center',
+                background: 'rgba(13, 17, 23, 0.5)',
+              }}
+            >
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  border: `2px solid ${theirColor}40`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  marginBottom: 16,
+                  color: theirColor,
+                  opacity: 0.6,
+                }}
+              >
+                👤
+              </div>
+              <div style={{ color: colors.muted, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                Waiting for <span style={{ color: theirColor }}>{peerUsername}</span>
+              </div>
+              <div style={{ color: colors.muted, fontSize: 12, lineHeight: 1.6, maxWidth: 280, opacity: 0.7 }}>
+                Their changes will appear here in real-time once they start editing
+                {' '}<span style={{ fontWeight: 600 }}>{filePath.split('/').pop()}</span>.
+              </div>
+              <div
+                style={{
+                  marginTop: 20,
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  background: `${theirColor}10`,
+                  border: `1px solid ${theirColor}25`,
+                  fontSize: 11,
+                  color: colors.muted,
+                }}
+              >
+                ● Listening for edits…
+              </div>
+            </div>
+          ) : (
+            <Editor
+              height="100%"
+              theme="vs-dark"
+              path={`peer-${peerUsername}-${filePath}`}
+              language={lang}
+              value={peerContent}
+              onMount={onRightMount}
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                fontSize: 13,
+                wordWrap: 'on',
+                scrollBeyondLastLine: false,
+              }}
+            />
+          )}
         </div>
       </div>
     </div>

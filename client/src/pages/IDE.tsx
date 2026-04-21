@@ -11,6 +11,8 @@ import PresenceBar from '../components/PresenceBar';
 import CollabEditor from '../components/CollabEditor';
 import PeerDiffWindow from '../components/PeerDiffWindow';
 import WebhookLog from '../components/WebhookLog';
+import ConflictPanel from '../components/ConflictPanel';
+import FileTree from '../components/FileTree';
 
 type TreeNode = {
   name: string;
@@ -171,6 +173,9 @@ export default function IDE() {
   // Track peer content from live diff relay (no polling needed)
   const [peerContentMap, setPeerContentMap] = useState<Map<string, string>>(new Map());
 
+  // Track active conflicts for the ConflictPanel
+  const [activeConflicts, setActiveConflicts] = useState<any[]>([]);
+
   const peerContent = useMemo(() => {
     if (!selectedPeerUsername) return null;
     return peerContentMap.get(selectedPeerUsername) ?? null;
@@ -186,7 +191,33 @@ export default function IDE() {
         next.set(username, content);
         return next;
       });
-    }
+    },
+    // onHydrateState: extract content from stored diffs on room join
+    (_base, diffs) => {
+      if (!diffs || diffs.length === 0) return;
+      setPeerContentMap((prev) => {
+        const next = new Map(prev);
+        for (const d of diffs) {
+          const patch = d.patch as any;
+          const username = (d as any).username as string | undefined;
+          // Stored diff objects include { patches, seq, content }
+          if (username && patch?.content && typeof patch.content === 'string') {
+            next.set(username, patch.content);
+          }
+        }
+        return next;
+      });
+    },
+    // onConflictDetected: server sends classified conflicts
+    (conflicts) => {
+      setActiveConflicts(conflicts);
+    },
+    // onConflictResolved: remove resolved conflict from active list
+    (startLine, endLine) => {
+      setActiveConflicts((prev) =>
+        prev.filter((c) => !(c.startLine === startLine && c.endLine === endLine))
+      );
+    },
   );
 
   // Clear peer content map when switching files
@@ -393,7 +424,7 @@ export default function IDE() {
             {loadingTree ? (
               <div style={{ color: colors.muted, fontSize: 13 }}>Loading tree…</div>
             ) : (
-              <TreeView
+              <FileTree
                 nodes={tree}
                 expanded={expanded}
                 onToggle={(p) =>
@@ -444,12 +475,12 @@ export default function IDE() {
                   filePath={activePath}
                   onClose={() => setSelectedPeerUsername(null)}
                   onValueChange={setFileContent}
-                  onDiffUpdate={(patches) => {
+                  onDiffUpdate={(patches, currentContent) => {
                     if (!isConnected) return;
                     const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                     if (!rid) return;
                     diffSeqRef.current += 1;
-                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: fileContent });
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: currentContent });
                   }}
                 />
               ) : (
@@ -458,12 +489,12 @@ export default function IDE() {
                   value={fileContent}
                   snapshotKey={snapshotKey}
                   onValueChange={setFileContent}
-                  onDiffUpdate={(patches) => {
+                  onDiffUpdate={(patches, currentContent) => {
                     if (!isConnected) return;
                     const rid = currentRoomIdRef.current || `${selectedRepo?.id}:${selectedBranch}:${filePathNorm}`;
                     if (!rid) return;
                     diffSeqRef.current += 1;
-                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: fileContent });
+                    sendMessage({ type: 'diff_update', roomId: rid, patches, seq: diffSeqRef.current, content: currentContent });
                   }}
                   peerHighlight={peerHighlight}
                 />
@@ -483,6 +514,42 @@ export default function IDE() {
           )}
         </div>
       </div>
+
+      {/* Conflict Resolution Panel — floating overlay */}
+      {activeConflicts.length > 0 && (
+        <ConflictPanel
+          conflicts={activeConflicts}
+          myUsername={
+            // Extract username from JWT token payload
+            (() => {
+              try {
+                const token = localStorage.getItem('token');
+                if (!token) return 'you';
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                return payload.username || 'you';
+              } catch {
+                return 'you';
+              }
+            })()
+          }
+          onResolve={(startLine, endLine, resolution) => {
+            const rid = currentRoomIdRef.current;
+            if (!rid) return;
+            sendMessage({
+              type: 'resolve_conflict',
+              roomId: rid,
+              startLine,
+              endLine,
+              resolution,
+            });
+            // Optimistic removal from local state
+            setActiveConflicts((prev) =>
+              prev.filter((c) => !(c.startLine === startLine && c.endLine === endLine))
+            );
+          }}
+          onDismiss={() => setActiveConflicts([])}
+        />
+      )}
     </Shell>
   );
 }
