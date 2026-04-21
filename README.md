@@ -1,7 +1,7 @@
 # CollabIDE — Real-Time Collaborative Code Editor
 
 > **Person C Contribution** · State Layer Engineering  
-> Owner: Person C — Pari  
+> Owner: Person C — Harshita Jain
 > Layer: Redis State Layer (L1/L2/L3)  
 > Status: Pipeline Integrated · Latency Fixed · Conflict Engine Implemented
 
