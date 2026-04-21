@@ -289,19 +289,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
       try {
         // Validate that the role actually exists in the roles table
-        const roleCheck = await db.query('SELECT name FROM roles WHERE name = $1', [role.trim()]);
+        const roleCheck = await db.query('SELECT id FROM roles WHERE name = $1', [role.trim()]);
         if (roleCheck.rows.length === 0) {
           return reply.status(400).send({ error: 'Invalid role' });
         }
 
         const result = await db.query(
-          'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, username, role',
-          [role.trim(), id]
+          'UPDATE users SET role = $1 WHERE id = $2 and role not in ($3) RETURNING id, username, role',
+          [role.trim(), id, 'admin']
         );
         if (result.rows.length === 0) {
           return reply.status(404).send({ error: 'User not found' });
         }
-        return result.rows[0];
+        const result2 = await db.query(
+          'UPDATE user_roles set role_id = $1 where user_id = $2 RETURNING user_id, role_id',
+          [roleCheck.rows[0].id, id]
+        )
+        return result2.rows[0];
       } catch (err: any) {
         return reply.status(500).send({ error: err.message });
       }
